@@ -44,7 +44,14 @@ if (isProd) {
     }
   }
 }
+
+const planHin = computePlan(participants, "Hinfahrt");
+const planRueck = computePlan(participants, "Rückfahrt");
+const csvExportText = [planToCsv(planHin), planToCsv(planRueck)].join("\n\n");
+
 ---
+
+
 <BaseLayout title="Carpool Planner">
   <header class="flex flex-col gap-2">
     <p class="text-sm font-semibold text-slate-300 uppercase tracking-wide">DPSG Carpool Planner</p>
@@ -109,42 +116,44 @@ if (isProd) {
       </div>
       <div class="flex gap-2 text-sm">
         <button class="rounded-lg bg-slate-800 px-3 py-2 text-white border border-slate-700">Autos vorschlagen</button>
-        <form method="post" action="" onSubmit="event.preventDefault();" class="contents">
-          <button
-            class="rounded-lg bg-blue-500 px-3 py-2 text-white font-semibold hover:bg-blue-400"
-            type="button"
-            onClick={() => {
-              const csv = [
-                planToCsv(computePlan(participants, "Hinfahrt")),
-                planToCsv(computePlan(participants, "Rückfahrt")),
-              ].join("\n\n");
-              const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement("a");
-              a.href = url;
-              a.download = "fahrten.csv";
-              a.click();
-              URL.revokeObjectURL(url);
-            }}
-          >
-            CSV Export
-          </button>
-        </form>
         <button
+          id="export-csv"
+          class="rounded-lg bg-blue-500 px-3 py-2 text-white font-semibold hover:bg-blue-400"
+          type="button"
+        >
+          CSV Export
+        </button>
+        <button
+          id="copy-csv"
           class="rounded-lg bg-slate-700 px-3 py-2 text-white"
           type="button"
-          onClick={() => {
-            const csv = [
-              planToCsv(computePlan(participants, "Hinfahrt")),
-              planToCsv(computePlan(participants, "Rückfahrt")),
-            ].join("\n\n");
-            navigator.clipboard?.writeText(csv).catch(() => {});
-          }}
         >
           Copy
         </button>
         <button class="rounded-lg bg-amber-500/90 px-3 py-2 text-slate-900 font-semibold hover:bg-amber-400" type="button">PDF (später)</button>
       </div>
+      <script define:vars={{ csvExportText }}>
+        const csvText = csvExportText;
+        const exportBtn = document.getElementById('export-csv');
+        const copyBtn = document.getElementById('copy-csv');
+        if (exportBtn) {
+          exportBtn.addEventListener('click', () => {
+            const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'fahrten.csv';
+            a.click();
+            URL.revokeObjectURL(url);
+          });
+        }
+        if (copyBtn) {
+          copyBtn.addEventListener('click', () => {
+            navigator.clipboard?.writeText(csvText).catch(() => {});
+          });
+        }
+      </script>
+
     </div>
     <div class="mt-3 grid gap-3 md:grid-cols-2">
       {(["Hinfahrt", "Rückfahrt"] as const).map((dir) => {
