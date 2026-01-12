@@ -15,7 +15,9 @@ Automated carpool coordination using the Campflow API. Fetches event dates to st
 - Build: `npm run build`
 
 ## Current scope
-- Demo UI scaffolded (Astro + Tailwind 4) for event selection, CSV demo, and planning (Hin/Rück getrennt).
-- Drivers prioritized: Leiter ("🐦‍🔥 Leitende / Ehemalige / Externe") first.
-- CSV sample `Winter-Wochenende_2026.csv` is local only (do not commit).
-- Future: Fetch events from Campflow API (dropdown), replace CSV with Campflow participants, apply DPSG CI colors/fonts.
+- Astro + Tailwind 4 UI mit DPSG-Farben; Event-Dropdown, Teilnehmerliste, Planner für Hin/Rück getrennt.
+- Prod/Dev: In Prod Campflow (Token `CAMPFLOW_TOKEN`), sonst CSV-Fallback. Modus wird im UI angezeigt.
+- Auto-Fahrerzuweisung mit Leiter-Priorität; Plätze aus Teilnehmerangaben, Leftover-Hinweis.
+- Export: CSV-Download und Copy-to-Clipboard (PDF später).
+- CSV-Sample `Winter-Wochenende_2026.csv` bleibt lokal und wird nicht committed.
+- Zukunft: Campflow-Endpoints finalisieren/anpassen, manuelle/Drag&Drop-Zuweisung und PDF.
