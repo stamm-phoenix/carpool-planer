@@ -3,6 +3,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 import participantsCsv from "../../Winter-Wochenende_2026.csv?raw";
 import { parseCsv } from "../lib/csvLoader";
 import { fetchCampflowEvents, fetchCampflowParticipants } from "../lib/campflow";
+import { computePlan, groupPriorityOrder, planToCsv } from "../lib/planner";
 import type { CampflowEvent, Participant } from "../lib/types";
 
 const MODE = (import.meta.env?.MODE ?? "development").toLowerCase();
@@ -14,7 +15,7 @@ const sampleEvents: CampflowEvent[] = [
   { id: "event-2", name: "Sommerlager 2026", startDate: "2026-08-02" },
 ];
 
-const groupPriority = ["🐦‍🔥 Leitende / Ehemalige / Externe", "🔵 Jungpfadfinder*innen", "🟢 Pfadfinder*innen", "🟠 Wölflinge", "🔴 Rover"];
+const groupPriority = groupPriorityOrder;
 
 let events: CampflowEvent[] = sampleEvents;
 let participants: Participant[] = parseCsv(participantsCsv);
@@ -108,30 +109,70 @@ if (isProd) {
       </div>
       <div class="flex gap-2 text-sm">
         <button class="rounded-lg bg-slate-800 px-3 py-2 text-white border border-slate-700">Autos vorschlagen</button>
-        <button class="rounded-lg bg-blue-500 px-3 py-2 text-white font-semibold hover:bg-blue-400">CSV Export</button>
-        <button class="rounded-lg bg-slate-700 px-3 py-2 text-white">Copy</button>
-        <button class="rounded-lg bg-amber-500/90 px-3 py-2 text-slate-900 font-semibold hover:bg-amber-400">PDF (später)</button>
+        <form method="post" action="" onSubmit="event.preventDefault();" class="contents">
+          <button
+            class="rounded-lg bg-blue-500 px-3 py-2 text-white font-semibold hover:bg-blue-400"
+            type="button"
+            onClick={() => {
+              const csv = [
+                planToCsv(computePlan(participants, "Hinfahrt")),
+                planToCsv(computePlan(participants, "Rückfahrt")),
+              ].join("\n\n");
+              const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = "fahrten.csv";
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+          >
+            CSV Export
+          </button>
+        </form>
+        <button
+          class="rounded-lg bg-slate-700 px-3 py-2 text-white"
+          type="button"
+          onClick={() => {
+            const csv = [
+              planToCsv(computePlan(participants, "Hinfahrt")),
+              planToCsv(computePlan(participants, "Rückfahrt")),
+            ].join("\n\n");
+            navigator.clipboard?.writeText(csv).catch(() => {});
+          }}
+        >
+          Copy
+        </button>
+        <button class="rounded-lg bg-amber-500/90 px-3 py-2 text-slate-900 font-semibold hover:bg-amber-400" type="button">PDF (später)</button>
       </div>
     </div>
     <div class="mt-3 grid gap-3 md:grid-cols-2">
-      <div class="rounded-xl border border-slate-800 bg-slate-900/80 p-3">
-        <h4 class="text-sm font-semibold text-white mb-2">Hinfahrt</h4>
-        <ul class="space-y-2 text-sm text-slate-200">
-          <li class="rounded-lg border border-slate-700/80 bg-slate-800/60 p-2">
-            <div class="flex justify-between"><span>Fahrer: Sebastian (Leiter)</span><span>Sitze: 3</span></div>
-            <div class="text-slate-300">Mitfahrende: Klara, Mina</div>
-          </li>
-        </ul>
-      </div>
-      <div class="rounded-xl border border-slate-800 bg-slate-900/80 p-3">
-        <h4 class="text-sm font-semibold text-white mb-2">Rückfahrt</h4>
-        <ul class="space-y-2 text-sm text-slate-200">
-          <li class="rounded-lg border border-slate-700/80 bg-slate-800/60 p-2">
-            <div class="flex justify-between"><span>Fahrer: Sebastian (Leiter)</span><span>Sitze: 3</span></div>
-            <div class="text-slate-300">Mitfahrende: Klara, Michael</div>
-          </li>
-        </ul>
-      </div>
+      {(["Hinfahrt", "Rückfahrt"] as const).map((dir) => {
+        const plan = computePlan(participants, dir);
+        return (
+          <div class="rounded-xl border border-slate-800 bg-slate-900/80 p-3">
+            <h4 class="text-sm font-semibold text-white mb-2">{dir}</h4>
+            <ul class="space-y-2 text-sm text-slate-200">
+              {plan.cars.map((car) => (
+                <li class="rounded-lg border border-slate-700/80 bg-slate-800/60 p-2">
+                  <div class="flex justify-between">
+                    <span>Fahrer: {car.driver.Vorname} {car.driver.Nachname} ({car.driver.Gruppen})</span>
+                    <span>Sitze: {car.seatsTotal}</span>
+                  </div>
+                  <div class="text-slate-300">Mitfahrende: {car.passengers.map((p) => `${p.Vorname} ${p.Nachname}`).join(", ") || "-"}</div>
+                </li>
+              ))}
+              {plan.leftovers.length > 0 && (
+                <li class="rounded-lg border border-amber-500/40 bg-amber-500/10 p-2 text-amber-100">
+                  <div class="font-semibold">Ohne Platz:</div>
+                  <div class="text-amber-200 text-sm">{plan.leftovers.map((p) => `${p.Vorname} ${p.Nachname}`).join(", ")}</div>
+                </li>
+              )}
+            </ul>
+            <div class="mt-2 text-xs text-slate-400">Plätze: {plan.seatsAvailable} / Bedarf: {plan.demand}</div>
+          </div>
+        );
+      })}
     </div>
   </section>
 </BaseLayout>
