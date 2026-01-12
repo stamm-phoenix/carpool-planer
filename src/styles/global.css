@@ -1,1 +1,25 @@
 @import "tailwindcss";
+
+:root {
+  --dpsg-navy: #0d1b2a;
+  --dpsg-blue: #1f4e79;
+  --dpsg-light: #e9eef5;
+  --dpsg-accent: #1fa0ff;
+  --dpsg-amber: #fbbf24;
+}
+
+body {
+  background: radial-gradient(circle at 20% 20%, rgba(31, 160, 255, 0.12), transparent 30%),
+    radial-gradient(circle at 80% 0%, rgba(15, 118, 110, 0.12), transparent 32%),
+    var(--dpsg-navy);
+  color: var(--dpsg-light);
+  min-height: 100vh;
+}
+
+a {
+  color: var(--dpsg-accent);
+}
+
+a:hover {
+  color: #7dd3fc;
+}

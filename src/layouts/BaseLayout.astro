@@ -12,6 +12,15 @@ const { title = "Carpool Planner" } = Astro.props;
     <meta name="generator" content={Astro.generator} />
     <title>{title}</title>
     <link rel="stylesheet" href="/src/styles/global.css" />
+    <style>
+      @font-face {
+        font-family: "DPSG-Body";
+        src: local("Inter"), local("Segoe UI"), local("Roboto");
+      }
+      body {
+        font-family: "DPSG-Body", system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+    </style>
   </head>
   <body class="min-h-screen bg-slate-900 text-slate-50">
     <main class="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-8 md:px-6 lg:px-8">

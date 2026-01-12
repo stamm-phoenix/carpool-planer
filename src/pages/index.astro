@@ -1,18 +1,58 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
+import participantsCsv from "../../Winter-Wochenende_2026.csv?raw";
+import { parseCsv } from "../lib/csvLoader";
+import { fetchCampflowEvents, fetchCampflowParticipants } from "../lib/campflow";
+import type { CampflowEvent, Participant } from "../lib/types";
 
-const sampleEvents = [
-  { id: "event-1", name: "Winter-Wochenende 2026", date: "2026-02-14" },
-  { id: "event-2", name: "Sommerlager 2026", date: "2026-08-02" },
+const MODE = (import.meta.env?.MODE ?? "development").toLowerCase();
+const isProd = MODE === "production";
+const token = import.meta.env?.CAMPFLOW_TOKEN ?? "";
+
+const sampleEvents: CampflowEvent[] = [
+  { id: "event-1", name: "Winter-Wochenende 2026", startDate: "2026-02-14" },
+  { id: "event-2", name: "Sommerlager 2026", startDate: "2026-08-02" },
 ];
 
 const groupPriority = ["🐦‍🔥 Leitende / Ehemalige / Externe", "🔵 Jungpfadfinder*innen", "🟢 Pfadfinder*innen", "🟠 Wölflinge", "🔴 Rover"];
+
+let events: CampflowEvent[] = sampleEvents;
+let participants: Participant[] = parseCsv(participantsCsv);
+let modeLabel = "Entwicklung (CSV)";
+
+if (isProd) {
+  if (!token) {
+    events = sampleEvents;
+    participants = parseCsv(participantsCsv);
+    modeLabel = "Prod ohne Token → CSV";
+  } else {
+    try {
+      events = await fetchCampflowEvents(token);
+      if (events.length === 0) {
+        events = sampleEvents;
+      }
+      if (events[0]?.id) {
+        participants = await fetchCampflowParticipants(events[0].id, token);
+      }
+      modeLabel = "Production (Campflow)";
+    } catch (err) {
+      console.warn("Campflow fetch failed, fallback CSV", err);
+      events = sampleEvents;
+      participants = parseCsv(participantsCsv);
+      modeLabel = "Fallback (CSV)";
+    }
+  }
+}
 ---
 <BaseLayout title="Carpool Planner">
   <header class="flex flex-col gap-2">
     <p class="text-sm font-semibold text-slate-300 uppercase tracking-wide">DPSG Carpool Planner</p>
     <h1 class="text-3xl font-bold text-white">Events & Fahrten planen</h1>
-    <p class="text-sm text-slate-300">Campflow-Events laden (Dropdown), CSV-Demo nutzen, Hin- und Rückfahrt getrennt planen, Leiter priorisiert.</p>
+    <p class="text-sm text-slate-300">Campflow-Events laden (Dropdown), CSV-Demo nutzen, Hin- und Rückfahrt getrennt planen, Leiter priorisiert. DPSG-Farben, Export (CSV/Copy) vorgesehen.</p>
+    <div class="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/40 rounded-lg px-3 py-2 inline-flex items-center gap-2">
+      <span class="inline-block h-2 w-2 rounded-full bg-amber-400"></span>
+      <span>Modus: {modeLabel} ({isProd ? "prod" : "dev"})</span>
+    </div>
   </header>
 
   <section class="rounded-2xl border border-slate-800 bg-slate-950/60 p-4 shadow-lg shadow-slate-900/40">
@@ -21,9 +61,9 @@ const groupPriority = ["🐦‍🔥 Leitende / Ehemalige / Externe", "🔵 Jungp
     <div class="flex flex-col gap-3 md:flex-row md:items-center">
       <label class="text-sm text-slate-200" for="event">Event</label>
       <select id="event" name="event" class="w-full md:w-auto rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white focus:border-blue-400 focus:outline-none">
-        {sampleEvents.map((evt) => (
+        {events.map((evt) => (
           <option value={evt.id}>
-            {evt.name} · {evt.date}
+            {evt.name} · {evt.startDate ?? ""}
           </option>
         ))}
       </select>
@@ -36,13 +76,16 @@ const groupPriority = ["🐦‍🔥 Leitende / Ehemalige / Externe", "🔵 Jungp
       <h3 class="text-base font-semibold text-white">Teilnehmer (CSV-Demo)</h3>
       <p class="text-sm text-slate-300 mb-3">Vor- und Nachname sind das Kind; Anzahl inkl. eigenes Kind.</p>
       <div class="rounded-lg border border-slate-800 bg-slate-900/80 px-3 py-2 text-sm text-slate-200">
-        <ul class="space-y-1">
-          <li class="flex justify-between"><span>Klara Auer (🟢 Pfadfinder*innen)</span><span class="text-slate-400">H 3 · R 3</span></li>
-          <li class="flex justify-between"><span>Sebastian Bartlechner (🐦‍🔥 Leitende / Ehemalige / Externe)</span><span class="text-slate-400">H 3 · R 3</span></li>
-          <li class="flex justify-between"><span>Mina Drechsler (🟠 Wölflinge)</span><span class="text-slate-400">H 4 · R 0</span></li>
+        <ul class="space-y-1 max-h-64 overflow-auto pr-1">
+          {participants.map((p) => (
+            <li class="flex justify-between">
+              <span>{p.Vorname} {p.Nachname} ({p.Gruppen})</span>
+              <span class="text-slate-400">H {p.Hinfahrt} · R {p.Rückfahrt}</span>
+            </li>
+          ))}
         </ul>
       </div>
-      <p class="text-xs text-slate-400 mt-2">CSV bleibt lokal (nicht committen). Später ersetzt durch Campflow-Teilnehmer.</p>
+      <p class="text-xs text-slate-400 mt-2">CSV bleibt lokal (nicht committen). Später durch Campflow-Teilnehmer ersetzt.</p>
     </div>
 
     <div class="rounded-2xl border border-slate-800 bg-slate-950/60 p-4 shadow-lg shadow-slate-900/40">
@@ -67,6 +110,7 @@ const groupPriority = ["🐦‍🔥 Leitende / Ehemalige / Externe", "🔵 Jungp
         <button class="rounded-lg bg-slate-800 px-3 py-2 text-white border border-slate-700">Autos vorschlagen</button>
         <button class="rounded-lg bg-blue-500 px-3 py-2 text-white font-semibold hover:bg-blue-400">CSV Export</button>
         <button class="rounded-lg bg-slate-700 px-3 py-2 text-white">Copy</button>
+        <button class="rounded-lg bg-amber-500/90 px-3 py-2 text-slate-900 font-semibold hover:bg-amber-400">PDF (später)</button>
       </div>
     </div>
     <div class="mt-3 grid gap-3 md:grid-cols-2">
