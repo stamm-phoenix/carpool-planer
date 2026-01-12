@@ -1,0 +1,21 @@
+---
+interface Props {
+  title?: string;
+}
+const { title = "Carpool Planner" } = Astro.props;
+---
+<html lang="de" class="min-h-full bg-slate-900 text-slate-50">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="generator" content={Astro.generator} />
+    <title>{title}</title>
+    <link rel="stylesheet" href="/src/styles/global.css" />
+  </head>
+  <body class="min-h-screen bg-slate-900 text-slate-50">
+    <main class="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-8 md:px-6 lg:px-8">
+      <slot />
+    </main>
+  </body>
+</html>
