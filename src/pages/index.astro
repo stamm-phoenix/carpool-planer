@@ -1,14 +1,16 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
-import { fetchCampflowEvents, fetchCampflowParticipants } from "../lib/campflow";
+import { fetchCampflowEvents, fetchCampflowParticipants, fetchCampflowColumns, DEFAULT_COLUMN_MAPPING } from "../lib/campflow";
 import { computePlan, groupPriorityOrder, planToCsv } from "../lib/planner";
-import type { CampflowEvent, Participant } from "../lib/types";
+import type { CampflowEvent, Participant, CampflowColumn, ColumnMapping } from "../lib/types";
 
 const token = import.meta.env.CAMPFLOW_API_KEY ?? "";
 
-// Get event ID from URL query parameter
+// Get URL parameters
 const url = Astro.url;
 const requestedEventId = url.searchParams.get("event");
+const requestedHinCol = url.searchParams.get("hinCol");
+const requestedRueckCol = url.searchParams.get("rueckCol");
 
 const sampleEvents: CampflowEvent[] = [
   { id: "sample-1", name: "Demo Event (kein API Key)", startDate: "2026-01-01" },
@@ -21,16 +23,24 @@ const sampleParticipants: Participant[] = [
   { Vorname: "Tom", Nachname: "Schmidt", Gruppen: "Jungpfadfinder*innen", Hinfahrt: 0, Rückfahrt: 0 },
   { Vorname: "Lisa", Nachname: "Weber", Gruppen: "Pfadfinder*innen", Hinfahrt: 3, Rückfahrt: 0 },
   { Vorname: "Felix", Nachname: "Müller", Gruppen: "Wölflinge", Hinfahrt: 0, Rückfahrt: 0 },
+  { Vorname: "Sarah", Nachname: "Klein", Gruppen: "Rover", Hinfahrt: 5, Rückfahrt: 5 },
 ];
 
 const groupPriority = groupPriorityOrder;
 
 let events: CampflowEvent[] = sampleEvents;
 let participants: Participant[] = sampleParticipants;
+let availableColumns: CampflowColumn[] = [];
 let modeLabel = "Demo";
 let selectedEventId = "";
 let selectedEventName = "";
 let errorMessage = "";
+
+// Column mapping - use URL params or defaults
+let columnMapping: ColumnMapping = {
+  hinfahrtColumn: requestedHinCol || DEFAULT_COLUMN_MAPPING.hinfahrtColumn,
+  rueckfahrtColumn: requestedRueckCol || DEFAULT_COLUMN_MAPPING.rueckfahrtColumn,
+};
 
 // Always try to fetch from Campflow if token is available
 if (token) {
@@ -55,7 +65,16 @@ if (token) {
     selectedEventName = selectedEvent?.name ?? "";
     
     if (selectedEventId) {
-      participants = await fetchCampflowParticipants(selectedEventId, token);
+      // Fetch available columns for column selection
+      try {
+        availableColumns = await fetchCampflowColumns(selectedEventId, token);
+      } catch {
+        // Columns endpoint might not be available, continue without column selection
+        availableColumns = [];
+      }
+      
+      // Fetch participants with the column mapping
+      participants = await fetchCampflowParticipants(selectedEventId, token, columnMapping);
     }
     modeLabel = "Campflow";
   } catch (err) {
@@ -110,7 +129,7 @@ function getShortGroupName(group: string): string {
     </div>
   </div>
 
-  <!-- Event Selection -->
+  <!-- Event Selection & Column Mapping -->
   <section class="bg-white rounded-lg border border-dpsg-beige-2 p-5 mb-6 shadow-sm">
     <h2 class="font-serif text-lg font-bold text-dpsg-blue mb-3">Event auswählen</h2>
     
@@ -120,7 +139,7 @@ function getShortGroupName(group: string): string {
       </div>
     )}
     
-    <div class="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+    <div class="flex flex-col sm:flex-row gap-3 items-start sm:items-center mb-4">
       <select 
         id="event" 
         name="event" 
@@ -141,28 +160,92 @@ function getShortGroupName(group: string): string {
       </button>
     </div>
     
+    <!-- Column Mapping Section -->
+    {availableColumns.length > 0 && (
+      <div class="border-t border-dpsg-beige-2 pt-4 mt-4">
+        <h3 class="text-sm font-semibold text-dpsg-blue mb-3">Spalten-Zuordnung</h3>
+        <p class="text-xs text-dpsg-blue/60 mb-3">
+          Wähle die Campflow-Felder für Hin- und Rückfahrt-Plätze
+        </p>
+        
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label for="hinCol" class="block text-sm text-dpsg-blue mb-1">Hinfahrt-Spalte</label>
+            <select 
+              id="hinCol" 
+              name="hinCol" 
+              class="w-full rounded border border-dpsg-beige-2 bg-white px-3 py-2 text-sm text-dpsg-blue focus:border-dpsg-cyan focus:outline-none focus:ring-1 focus:ring-dpsg-cyan"
+            >
+              {availableColumns.map((col) => (
+                <option value={col.id} selected={col.id === columnMapping.hinfahrtColumn}>
+                  {col.name} ({col.id})
+                </option>
+              ))}
+            </select>
+          </div>
+          
+          <div>
+            <label for="rueckCol" class="block text-sm text-dpsg-blue mb-1">Rückfahrt-Spalte</label>
+            <select 
+              id="rueckCol" 
+              name="rueckCol" 
+              class="w-full rounded border border-dpsg-beige-2 bg-white px-3 py-2 text-sm text-dpsg-blue focus:border-dpsg-cyan focus:outline-none focus:ring-1 focus:ring-dpsg-cyan"
+            >
+              {availableColumns.map((col) => (
+                <option value={col.id} selected={col.id === columnMapping.rueckfahrtColumn}>
+                  {col.name} ({col.id})
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        
+        <p class="text-xs text-dpsg-blue/50 mt-2">
+          Aktuell: Hinfahrt = {columnMapping.hinfahrtColumn}, Rückfahrt = {columnMapping.rueckfahrtColumn}
+        </p>
+      </div>
+    )}
+    
     <script>
+      function navigateWithParams() {
+        const eventSelect = document.getElementById('event') as HTMLSelectElement | null;
+        const hinColSelect = document.getElementById('hinCol') as HTMLSelectElement | null;
+        const rueckColSelect = document.getElementById('rueckCol') as HTMLSelectElement | null;
+        
+        const url = new URL(window.location.href);
+        
+        if (eventSelect?.value) {
+          url.searchParams.set('event', eventSelect.value);
+        }
+        if (hinColSelect?.value) {
+          url.searchParams.set('hinCol', hinColSelect.value);
+        }
+        if (rueckColSelect?.value) {
+          url.searchParams.set('rueckCol', rueckColSelect.value);
+        }
+        
+        window.location.href = url.toString();
+      }
+      
       const eventSelect = document.getElementById('event') as HTMLSelectElement;
       const refreshBtn = document.getElementById('refresh-btn');
+      const hinColSelect = document.getElementById('hinCol');
+      const rueckColSelect = document.getElementById('rueckCol');
       
-      if (refreshBtn && eventSelect) {
-        refreshBtn.addEventListener('click', () => {
-          const selectedId = eventSelect.value;
-          if (selectedId) {
-            const url = new URL(window.location.href);
-            url.searchParams.set('event', selectedId);
-            window.location.href = url.toString();
-          }
-        });
-        
-        eventSelect.addEventListener('change', () => {
-          const selectedId = eventSelect.value;
-          if (selectedId) {
-            const url = new URL(window.location.href);
-            url.searchParams.set('event', selectedId);
-            window.location.href = url.toString();
-          }
-        });
+      if (refreshBtn) {
+        refreshBtn.addEventListener('click', navigateWithParams);
+      }
+      
+      if (eventSelect) {
+        eventSelect.addEventListener('change', navigateWithParams);
+      }
+      
+      if (hinColSelect) {
+        hinColSelect.addEventListener('change', navigateWithParams);
+      }
+      
+      if (rueckColSelect) {
+        rueckColSelect.addEventListener('change', navigateWithParams);
       }
     </script>
   </section>

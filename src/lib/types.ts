@@ -52,3 +52,27 @@ export interface CampflowApiResponse<T> {
     prev_cursor: string | null;
   };
 }
+
+/**
+ * Represents a custom column from Campflow that can be used for seat counts
+ */
+export interface CampflowColumn {
+  id: string;        // e.g. "col_K0HMI9HMkVblaqpBqFBu"
+  name: string;      // Display name from Campflow
+  type?: string;     // Field type (number, text, etc.)
+}
+
+/**
+ * User-selected mapping of which columns to use for Hinfahrt/Rückfahrt
+ */
+export interface ColumnMapping {
+  hinfahrtColumn: string;   // Column ID for outbound trip seats
+  rueckfahrtColumn: string; // Column ID for return trip seats
+}
+
+/**
+ * Extended event type that includes available columns
+ */
+export interface CampflowEventWithColumns extends CampflowEvent {
+  columns: CampflowColumn[];
+}

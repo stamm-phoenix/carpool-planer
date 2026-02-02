@@ -1,26 +1,78 @@
 import type { Participant } from "./types";
 
+/**
+ * Priority tiers for driver selection:
+ * - Tier 0: Leitende (highest priority, use ALL their seats)
+ * - Tier 1: Rover
+ * - Tier 2: Jupfis, Pfadis, Wölflinge (equal priority)
+ * 
+ * Within each tier, drivers with more seats are used first (fill cars completely).
+ */
+
+// Display order for UI (not the same as priority!)
 export const groupPriorityOrder = [
-  "🐦‍🔥 Leitende / Ehemalige / Externe",
-  "🔵 Jungpfadfinder*innen",
-  "🟢 Pfadfinder*innen",
-  "🟠 Wölflinge",
-  "🔴 Rover",
+  "Leitende",
+  "Rover",
+  "Jungpfadfinder*innen",
+  "Pfadfinder*innen",
+  "Wölflinge",
 ];
 
-const LEITER_GROUP = "🐦‍🔥 Leitende / Ehemalige / Externe";
+// Group name patterns for matching
+const GROUP_PATTERNS = {
+  leiter: ["leitend", "externe", "ehemalige"],
+  rover: ["rover"],
+  jupfi: ["jungpfadfinder"],
+  pfadi: ["pfadfinder"],
+  woelflinge: ["wölflinge", "wölfling", "woelfling"],
+} as const;
 
-function groupPriorityIndex(group: string): number {
-  const idx = groupPriorityOrder.findIndex((g) => group?.includes(g));
-  return idx === -1 ? groupPriorityOrder.length : idx;
+/**
+ * Get the priority tier for a participant's group.
+ * Lower number = higher priority.
+ * Tier 0: Leitende (always drive first, use all seats)
+ * Tier 1: Rover
+ * Tier 2: Jupfis, Pfadis, Wölflinge (equal)
+ */
+function getPriorityTier(group: string): number {
+  const g = group?.toLowerCase() ?? "";
+  
+  // Tier 0: Leitende / Ehemalige / Externe
+  if (GROUP_PATTERNS.leiter.some((p) => g.includes(p))) return 0;
+  
+  // Tier 1: Rover
+  if (GROUP_PATTERNS.rover.some((p) => g.includes(p))) return 1;
+  
+  // Tier 2: Jupfis, Pfadis, Wölflinge (equal priority)
+  if (GROUP_PATTERNS.jupfi.some((p) => g.includes(p))) return 2;
+  if (GROUP_PATTERNS.pfadi.some((p) => g.includes(p))) return 2;
+  if (GROUP_PATTERNS.woelflinge.some((p) => g.includes(p))) return 2;
+  
+  // Unknown groups get lowest priority
+  return 3;
+}
+
+/**
+ * Get a display-friendly group category
+ */
+export function getGroupCategory(group: string): string {
+  const g = group?.toLowerCase() ?? "";
+  
+  if (GROUP_PATTERNS.leiter.some((p) => g.includes(p))) return "Leitende";
+  if (GROUP_PATTERNS.rover.some((p) => g.includes(p))) return "Rover";
+  if (GROUP_PATTERNS.jupfi.some((p) => g.includes(p))) return "Jungpfadfinder*innen";
+  if (GROUP_PATTERNS.pfadi.some((p) => g.includes(p))) return "Pfadfinder*innen";
+  if (GROUP_PATTERNS.woelflinge.some((p) => g.includes(p))) return "Wölflinge";
+  
+  return group || "Unbekannt";
 }
 
 function isLeiter(participant: Participant): boolean {
-  return participant.Gruppen?.includes(LEITER_GROUP) ?? false;
+  return getPriorityTier(participant.Gruppen) === 0;
 }
 
-function isSameGroup(a: Participant, b: Participant): boolean {
-  return groupPriorityIndex(a.Gruppen) === groupPriorityIndex(b.Gruppen);
+function isSameTier(a: Participant, b: Participant): boolean {
+  return getPriorityTier(a.Gruppen) === getPriorityTier(b.Gruppen);
 }
 
 function hasSameLastName(a: Participant, b: Participant): boolean {
@@ -83,13 +135,15 @@ export function computePlan(participants: Participant[], direction: Direction): 
     }
   }
 
-  // Fahrer filtern und sortieren
+  // Fahrer filtern und sortieren nach Prioritätstier, dann nach Sitzplätzen (meiste zuerst)
   const drivers = potentialDrivers
     .filter((d) => !driversToExclude.has(`${d.participant.Vorname}|${d.participant.Nachname}`))
     .sort((a, b) => {
-      const pa = groupPriorityIndex(a.participant.Gruppen);
-      const pb = groupPriorityIndex(b.participant.Gruppen);
-      if (pa !== pb) return pa - pb;
+      const tierA = getPriorityTier(a.participant.Gruppen);
+      const tierB = getPriorityTier(b.participant.Gruppen);
+      // First sort by tier (lower = higher priority)
+      if (tierA !== tierB) return tierA - tierB;
+      // Within same tier, sort by seats descending (fill bigger cars first)
       return b.seats - a.seats;
     });
 
@@ -106,14 +160,14 @@ export function computePlan(participants: Participant[], direction: Direction): 
 
     // Passagiere auswählen: gleiche Stufe bevorzugen
     for (let i = 0; i < passengerCapacity && riders.length > 0; i++) {
-      // Erst nach gleichem Gruppenindex suchen
-      const sameGroupIdx = riders.findIndex((r) => isSameGroup(driver, r));
+      // Erst nach gleichem Tier suchen
+      const sameTierIdx = riders.findIndex((r) => isSameTier(driver, r));
       
-      if (sameGroupIdx !== -1) {
-        // Passagier aus gleicher Stufe gefunden
-        passengers.push(riders.splice(sameGroupIdx, 1)[0]);
+      if (sameTierIdx !== -1) {
+        // Passagier aus gleichem Tier gefunden
+        passengers.push(riders.splice(sameTierIdx, 1)[0]);
       } else {
-        // Keiner aus gleicher Stufe übrig -> nächsten verfügbaren nehmen
+        // Keiner aus gleichem Tier übrig -> nächsten verfügbaren nehmen
         passengers.push(riders.shift()!);
       }
     }
