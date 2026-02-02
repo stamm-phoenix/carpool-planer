@@ -160,48 +160,78 @@ function getShortGroupName(group: string): string {
       </button>
     </div>
     
-    <!-- Column Mapping Section -->
-    {availableColumns.length > 0 && (
+    <!-- Column Mapping Section - Always visible when using Campflow -->
+    {token && (
       <div class="border-t border-dpsg-beige-2 pt-4 mt-4">
         <h3 class="text-sm font-semibold text-dpsg-blue mb-3">Spalten-Zuordnung</h3>
         <p class="text-xs text-dpsg-blue/60 mb-3">
           Wähle die Campflow-Felder für Hin- und Rückfahrt-Plätze
         </p>
         
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label for="hinCol" class="block text-sm text-dpsg-blue mb-1">Hinfahrt-Spalte</label>
-            <select 
-              id="hinCol" 
-              name="hinCol" 
-              class="w-full rounded border border-dpsg-beige-2 bg-white px-3 py-2 text-sm text-dpsg-blue focus:border-dpsg-cyan focus:outline-none focus:ring-1 focus:ring-dpsg-cyan"
-            >
-              {availableColumns.map((col) => (
-                <option value={col.id} selected={col.id === columnMapping.hinfahrtColumn}>
-                  {col.name} ({col.id})
-                </option>
-              ))}
-            </select>
+        {availableColumns.length > 0 ? (
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label for="hinCol" class="block text-sm text-dpsg-blue mb-1">Hinfahrt-Spalte</label>
+              <select 
+                id="hinCol" 
+                name="hinCol" 
+                class="w-full rounded border border-dpsg-beige-2 bg-white px-3 py-2 text-sm text-dpsg-blue focus:border-dpsg-cyan focus:outline-none focus:ring-1 focus:ring-dpsg-cyan"
+              >
+                {availableColumns.map((col) => (
+                  <option value={col.id} selected={col.id === columnMapping.hinfahrtColumn}>
+                    {col.name} {col.name !== col.id ? `(${col.id})` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            <div>
+              <label for="rueckCol" class="block text-sm text-dpsg-blue mb-1">Rückfahrt-Spalte</label>
+              <select 
+                id="rueckCol" 
+                name="rueckCol" 
+                class="w-full rounded border border-dpsg-beige-2 bg-white px-3 py-2 text-sm text-dpsg-blue focus:border-dpsg-cyan focus:outline-none focus:ring-1 focus:ring-dpsg-cyan"
+              >
+                {availableColumns.map((col) => (
+                  <option value={col.id} selected={col.id === columnMapping.rueckfahrtColumn}>
+                    {col.name} {col.name !== col.id ? `(${col.id})` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
-          
-          <div>
-            <label for="rueckCol" class="block text-sm text-dpsg-blue mb-1">Rückfahrt-Spalte</label>
-            <select 
-              id="rueckCol" 
-              name="rueckCol" 
-              class="w-full rounded border border-dpsg-beige-2 bg-white px-3 py-2 text-sm text-dpsg-blue focus:border-dpsg-cyan focus:outline-none focus:ring-1 focus:ring-dpsg-cyan"
-            >
-              {availableColumns.map((col) => (
-                <option value={col.id} selected={col.id === columnMapping.rueckfahrtColumn}>
-                  {col.name} ({col.id})
-                </option>
-              ))}
-            </select>
+        ) : (
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label for="hinCol" class="block text-sm text-dpsg-blue mb-1">Hinfahrt-Spalte (ID)</label>
+              <input 
+                type="text"
+                id="hinCol" 
+                name="hinCol" 
+                value={columnMapping.hinfahrtColumn}
+                placeholder="col_..."
+                class="w-full rounded border border-dpsg-beige-2 bg-white px-3 py-2 text-sm text-dpsg-blue font-mono focus:border-dpsg-cyan focus:outline-none focus:ring-1 focus:ring-dpsg-cyan"
+              />
+            </div>
+            
+            <div>
+              <label for="rueckCol" class="block text-sm text-dpsg-blue mb-1">Rückfahrt-Spalte (ID)</label>
+              <input 
+                type="text"
+                id="rueckCol" 
+                name="rueckCol" 
+                value={columnMapping.rueckfahrtColumn}
+                placeholder="col_..."
+                class="w-full rounded border border-dpsg-beige-2 bg-white px-3 py-2 text-sm text-dpsg-blue font-mono focus:border-dpsg-cyan focus:outline-none focus:ring-1 focus:ring-dpsg-cyan"
+              />
+            </div>
           </div>
-        </div>
+        )}
         
         <p class="text-xs text-dpsg-blue/50 mt-2">
-          Aktuell: Hinfahrt = {columnMapping.hinfahrtColumn}, Rückfahrt = {columnMapping.rueckfahrtColumn}
+          {availableColumns.length > 0 
+            ? `${availableColumns.length} Spalten gefunden` 
+            : "Keine Spalten erkannt - gib die Spalten-IDs manuell ein"}
         </p>
       </div>
     )}
@@ -209,19 +239,19 @@ function getShortGroupName(group: string): string {
     <script>
       function navigateWithParams() {
         const eventSelect = document.getElementById('event') as HTMLSelectElement | null;
-        const hinColSelect = document.getElementById('hinCol') as HTMLSelectElement | null;
-        const rueckColSelect = document.getElementById('rueckCol') as HTMLSelectElement | null;
+        const hinColEl = document.getElementById('hinCol') as HTMLSelectElement | HTMLInputElement | null;
+        const rueckColEl = document.getElementById('rueckCol') as HTMLSelectElement | HTMLInputElement | null;
         
         const url = new URL(window.location.href);
         
         if (eventSelect?.value) {
           url.searchParams.set('event', eventSelect.value);
         }
-        if (hinColSelect?.value) {
-          url.searchParams.set('hinCol', hinColSelect.value);
+        if (hinColEl?.value) {
+          url.searchParams.set('hinCol', hinColEl.value);
         }
-        if (rueckColSelect?.value) {
-          url.searchParams.set('rueckCol', rueckColSelect.value);
+        if (rueckColEl?.value) {
+          url.searchParams.set('rueckCol', rueckColEl.value);
         }
         
         window.location.href = url.toString();
@@ -229,8 +259,8 @@ function getShortGroupName(group: string): string {
       
       const eventSelect = document.getElementById('event') as HTMLSelectElement;
       const refreshBtn = document.getElementById('refresh-btn');
-      const hinColSelect = document.getElementById('hinCol');
-      const rueckColSelect = document.getElementById('rueckCol');
+      const hinColEl = document.getElementById('hinCol');
+      const rueckColEl = document.getElementById('rueckCol');
       
       if (refreshBtn) {
         refreshBtn.addEventListener('click', navigateWithParams);
@@ -240,12 +270,24 @@ function getShortGroupName(group: string): string {
         eventSelect.addEventListener('change', navigateWithParams);
       }
       
-      if (hinColSelect) {
-        hinColSelect.addEventListener('change', navigateWithParams);
+      // Support both select and input elements for column mapping
+      if (hinColEl) {
+        hinColEl.addEventListener('change', navigateWithParams);
+        // For input fields, also trigger on Enter key
+        if (hinColEl.tagName === 'INPUT') {
+          hinColEl.addEventListener('keydown', (e) => {
+            if ((e as KeyboardEvent).key === 'Enter') navigateWithParams();
+          });
+        }
       }
       
-      if (rueckColSelect) {
-        rueckColSelect.addEventListener('change', navigateWithParams);
+      if (rueckColEl) {
+        rueckColEl.addEventListener('change', navigateWithParams);
+        if (rueckColEl.tagName === 'INPUT') {
+          rueckColEl.addEventListener('keydown', (e) => {
+            if ((e as KeyboardEvent).key === 'Enter') navigateWithParams();
+          });
+        }
       }
     </script>
   </section>

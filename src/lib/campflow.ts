@@ -119,7 +119,7 @@ function mapToParticipant(
 
 /**
  * Fetch available columns for an event (list) from Campflow
- * These can be used to let the user select which columns map to Hinfahrt/Rückfahrt
+ * Tries the columns endpoint first, falls back to extracting from participant data
  */
 export async function fetchCampflowColumns(
   listId: string,
@@ -128,28 +128,63 @@ export async function fetchCampflowColumns(
   if (!token) throw new Error("CAMPFLOW_API_KEY is required");
   if (!listId) throw new Error("listId is required");
 
-  const res = await fetch(`${CAMPFLOW_BASE}/lists/${listId}/columns`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-  });
+  // Try dedicated columns endpoint first
+  try {
+    const res = await fetch(`${CAMPFLOW_BASE}/lists/${listId}/columns`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    });
 
-  if (!res.ok) {
-    // If columns endpoint doesn't exist, return empty array
-    if (res.status === 404) {
-      return [];
+    if (res.ok) {
+      const json = (await res.json()) as CampflowApiResponse<{ id: string; name: string; type?: string }>;
+      return json.data.map((col) => ({
+        id: col.id,
+        name: col.name,
+        type: col.type,
+      }));
     }
-    throw new Error(`Campflow columns failed: ${res.status} ${res.statusText}`);
+  } catch {
+    // Columns endpoint not available, continue to fallback
   }
 
-  const json = (await res.json()) as CampflowApiResponse<{ id: string; name: string; type?: string }>;
+  // Fallback: fetch one participant and extract column IDs that start with "col_"
+  try {
+    const res = await fetch(`${CAMPFLOW_BASE}/lists/${listId}/persons?per_page=1`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    });
 
-  return json.data.map((col) => ({
-    id: col.id,
-    name: col.name,
-    type: col.type,
-  }));
+    if (res.ok) {
+      const json = (await res.json()) as CampflowApiResponse<CampflowApiPerson>;
+      if (json.data.length > 0) {
+        const person = json.data[0];
+        const columns: CampflowColumn[] = [];
+        
+        for (const key of Object.keys(person)) {
+          if (key.startsWith("col_")) {
+            // Try to determine if it's a number field based on value
+            const value = person[key];
+            const type = typeof value === "number" ? "number" : typeof value === "string" ? "text" : "unknown";
+            columns.push({
+              id: key,
+              name: key, // We don't have human-readable names in this case
+              type,
+            });
+          }
+        }
+        
+        return columns;
+      }
+    }
+  } catch {
+    // Failed to extract columns
+  }
+
+  return [];
 }
 
 /**
