@@ -1,25 +1,68 @@
 @import "tailwindcss";
 
-:root {
-  --dpsg-navy: #0d1b2a;
-  --dpsg-blue: #1f4e79;
-  --dpsg-light: #e9eef5;
-  --dpsg-accent: #1fa0ff;
-  --dpsg-amber: #fbbf24;
+@theme {
+  /* === DPSG Primärfarben === */
+  --color-dpsg-blue: #003056;
+  --color-dpsg-red: #810A1A;
+
+  /* === Neutrale/Akzentfarben === */
+  --color-dpsg-beige-1: #ECDFCB;
+  --color-dpsg-beige-2: #C7BDAD;
+  --color-dpsg-magenta: #E6007E;
+  --color-dpsg-yellow: #FFED00;
+  --color-dpsg-cyan: #009FE3;
+
+  /* === Stufenfarben === */
+  --color-dpsg-woelflinge: #FF6400;
+  --color-dpsg-jupfis: #2F53A7;
+  --color-dpsg-pfadfinder: #00823C;
+  --color-dpsg-rover: #CC1F2F;
+
+  /* === Weitere === */
+  --color-dpsg-leiter: #B1B9AD;
+
+  /* === Typografie (Web-Fallbacks) === */
+  --font-sans: Calibri, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, "Noto Sans", "Liberation Sans", sans-serif;
+  --font-serif: Arvo, Rockwell, Merriweather, ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
 }
 
+/* Base styles */
 body {
-  background: radial-gradient(circle at 20% 20%, rgba(31, 160, 255, 0.12), transparent 30%),
-    radial-gradient(circle at 80% 0%, rgba(15, 118, 110, 0.12), transparent 32%),
-    var(--dpsg-navy);
-  color: var(--dpsg-light);
-  min-height: 100vh;
+  background-color: var(--color-dpsg-beige-1);
+  color: var(--color-dpsg-blue);
 }
 
+/* Links */
 a {
-  color: var(--dpsg-accent);
+  color: var(--color-dpsg-cyan);
 }
 
 a:hover {
-  color: #7dd3fc;
+  color: var(--color-dpsg-magenta);
+}
+
+/* Custom utility for group badges */
+.badge-woelflinge {
+  background-color: var(--color-dpsg-woelflinge);
+  color: white;
+}
+
+.badge-jupfis {
+  background-color: var(--color-dpsg-jupfis);
+  color: white;
+}
+
+.badge-pfadfinder {
+  background-color: var(--color-dpsg-pfadfinder);
+  color: white;
+}
+
+.badge-rover {
+  background-color: var(--color-dpsg-rover);
+  color: white;
+}
+
+.badge-leiter {
+  background-color: var(--color-dpsg-leiter);
+  color: var(--color-dpsg-blue);
 }

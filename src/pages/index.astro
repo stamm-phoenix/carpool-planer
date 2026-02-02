@@ -1,47 +1,69 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
-import participantsCsv from "../../Winter-Wochenende_2026.csv?raw";
-import { parseCsv } from "../lib/csvLoader";
 import { fetchCampflowEvents, fetchCampflowParticipants } from "../lib/campflow";
 import { computePlan, groupPriorityOrder, planToCsv } from "../lib/planner";
 import type { CampflowEvent, Participant } from "../lib/types";
 
-const MODE = (import.meta.env?.MODE ?? "development").toLowerCase();
-const isProd = MODE === "production";
-const token = import.meta.env?.CAMPFLOW_TOKEN ?? "";
+const token = import.meta.env.CAMPFLOW_API_KEY ?? "";
+
+// Get event ID from URL query parameter
+const url = Astro.url;
+const requestedEventId = url.searchParams.get("event");
 
 const sampleEvents: CampflowEvent[] = [
-  { id: "event-1", name: "Winter-Wochenende 2026", startDate: "2026-02-14" },
-  { id: "event-2", name: "Sommerlager 2026", startDate: "2026-08-02" },
+  { id: "sample-1", name: "Demo Event (kein API Key)", startDate: "2026-01-01" },
+];
+
+// Sample participants for demo/fallback when no API key is available
+const sampleParticipants: Participant[] = [
+  { Vorname: "Max", Nachname: "Mustermann", Gruppen: "Leitende", Hinfahrt: 4, Rückfahrt: 4 },
+  { Vorname: "Anna", Nachname: "Schmidt", Gruppen: "Jungpfadfinder*innen", Hinfahrt: 0, Rückfahrt: 0 },
+  { Vorname: "Tom", Nachname: "Schmidt", Gruppen: "Jungpfadfinder*innen", Hinfahrt: 0, Rückfahrt: 0 },
+  { Vorname: "Lisa", Nachname: "Weber", Gruppen: "Pfadfinder*innen", Hinfahrt: 3, Rückfahrt: 0 },
+  { Vorname: "Felix", Nachname: "Müller", Gruppen: "Wölflinge", Hinfahrt: 0, Rückfahrt: 0 },
 ];
 
 const groupPriority = groupPriorityOrder;
 
 let events: CampflowEvent[] = sampleEvents;
-let participants: Participant[] = parseCsv(participantsCsv);
-let modeLabel = "Entwicklung (CSV)";
+let participants: Participant[] = sampleParticipants;
+let modeLabel = "Demo";
+let selectedEventId = "";
+let selectedEventName = "";
+let errorMessage = "";
 
-if (isProd) {
-  if (!token) {
-    events = sampleEvents;
-    participants = parseCsv(participantsCsv);
-    modeLabel = "Prod ohne Token → CSV";
-  } else {
-    try {
-      events = await fetchCampflowEvents(token);
-      if (events.length === 0) {
-        events = sampleEvents;
-      }
-      if (events[0]?.id) {
-        participants = await fetchCampflowParticipants(events[0].id, token);
-      }
-      modeLabel = "Production (Campflow)";
-    } catch (err) {
-      console.warn("Campflow fetch failed, fallback CSV", err);
-      events = sampleEvents;
-      participants = parseCsv(participantsCsv);
-      modeLabel = "Fallback (CSV)";
+// Always try to fetch from Campflow if token is available
+if (token) {
+  try {
+    const allEvents = await fetchCampflowEvents(token);
+    events = allEvents.length > 0 ? allEvents : sampleEvents;
+    
+    let selectedEvent: CampflowEvent | undefined;
+    
+    if (requestedEventId) {
+      selectedEvent = events.find((e) => e.id === requestedEventId);
     }
+    
+    if (!selectedEvent) {
+      selectedEvent = events.find((e) => 
+        e.name.toLowerCase().includes("winter-wochenende") && 
+        e.name.includes("2026")
+      ) ?? events[0];
+    }
+    
+    selectedEventId = selectedEvent?.id ?? "";
+    selectedEventName = selectedEvent?.name ?? "";
+    
+    if (selectedEventId) {
+      participants = await fetchCampflowParticipants(selectedEventId, token);
+    }
+    modeLabel = "Campflow";
+  } catch (err) {
+    console.warn("Campflow fetch failed, fallback to demo data", err);
+    errorMessage = err instanceof Error ? err.message : "Unbekannter Fehler";
+    events = sampleEvents;
+    participants = sampleParticipants;
+    modeLabel = "Fallback";
   }
 }
 
@@ -49,136 +71,318 @@ const planHin = computePlan(participants, "Hinfahrt");
 const planRueck = computePlan(participants, "Rückfahrt");
 const csvExportText = [planToCsv(planHin), planToCsv(planRueck)].join("\n\n");
 
+// Helper to get group color class
+function getGroupColorClass(group: string): string {
+  if (group.toLowerCase().includes("wölflinge")) return "bg-dpsg-woelflinge";
+  if (group.toLowerCase().includes("jungpfadfinder")) return "bg-dpsg-jupfis";
+  if (group.toLowerCase().includes("pfadfinder") && !group.toLowerCase().includes("jung")) return "bg-dpsg-pfadfinder";
+  if (group.toLowerCase().includes("rover")) return "bg-dpsg-rover";
+  if (group.toLowerCase().includes("leitend") || group.toLowerCase().includes("externe") || group.toLowerCase().includes("ehemalige")) return "bg-dpsg-leiter";
+  return "bg-dpsg-beige-2";
+}
+
+// Helper to get short group name
+function getShortGroupName(group: string): string {
+  if (group.toLowerCase().includes("wölflinge")) return "Wö";
+  if (group.toLowerCase().includes("jungpfadfinder")) return "Jupfi";
+  if (group.toLowerCase().includes("pfadfinder") && !group.toLowerCase().includes("jung")) return "Pfadi";
+  if (group.toLowerCase().includes("rover")) return "Rover";
+  if (group.toLowerCase().includes("leitend") || group.toLowerCase().includes("externe") || group.toLowerCase().includes("ehemalige")) return "Leiter";
+  return "?";
+}
 ---
 
-
-<BaseLayout title="Carpool Planner">
-  <header class="flex flex-col gap-2">
-    <p class="text-sm font-semibold text-slate-300 uppercase tracking-wide">DPSG Carpool Planner</p>
-    <h1 class="text-3xl font-bold text-white">Events & Fahrten planen</h1>
-    <p class="text-sm text-slate-300">Campflow-Events laden (Dropdown), CSV-Demo nutzen, Hin- und Rückfahrt getrennt planen, Leiter priorisiert. DPSG-Farben, Export (CSV/Copy) vorgesehen.</p>
-    <div class="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/40 rounded-lg px-3 py-2 inline-flex items-center gap-2">
-      <span class="inline-block h-2 w-2 rounded-full bg-amber-400"></span>
-      <span>Modus: {modeLabel} ({isProd ? "prod" : "dev"})</span>
+<BaseLayout title="Fahrtenplanung">
+  <!-- Page Header -->
+  <div class="mb-8">
+    <h1 class="font-serif text-3xl font-bold text-dpsg-blue mb-2">Fahrtenplanung</h1>
+    {selectedEventName && (
+      <p class="text-xl text-dpsg-blue/80">{selectedEventName}</p>
+    )}
+    <p class="text-dpsg-blue/60 mt-1">
+      Hin- und Rückfahrt getrennt planen, Leiter werden priorisiert.
+    </p>
+    
+    <!-- Status Badge -->
+    <div class="mt-3 inline-flex items-center gap-2 text-sm bg-white border border-dpsg-beige-2 rounded px-3 py-1.5">
+      <span class={`inline-block h-2 w-2 rounded-full ${token ? 'bg-dpsg-pfadfinder' : 'bg-dpsg-yellow'}`}></span>
+      <span class="text-dpsg-blue">{modeLabel} · {participants.length} Teilnehmer</span>
     </div>
-  </header>
+  </div>
 
-  <section class="rounded-2xl border border-slate-800 bg-slate-950/60 p-4 shadow-lg shadow-slate-900/40">
-    <h2 class="text-lg font-semibold text-white">Event-Auswahl</h2>
-    <p class="text-sm text-slate-300 mb-3">Später via Campflow-API: Dropdown zum gewünschten Event. Aktuell Demo-Events.</p>
-    <div class="flex flex-col gap-3 md:flex-row md:items-center">
-      <label class="text-sm text-slate-200" for="event">Event</label>
-      <select id="event" name="event" class="w-full md:w-auto rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white focus:border-blue-400 focus:outline-none">
+  <!-- Event Selection -->
+  <section class="bg-white rounded-lg border border-dpsg-beige-2 p-5 mb-6 shadow-sm">
+    <h2 class="font-serif text-lg font-bold text-dpsg-blue mb-3">Event auswählen</h2>
+    
+    {errorMessage && (
+      <div class="text-sm text-dpsg-red bg-dpsg-red/10 border border-dpsg-red/30 rounded px-3 py-2 mb-4">
+        {errorMessage}
+      </div>
+    )}
+    
+    <div class="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+      <select 
+        id="event" 
+        name="event" 
+        class="w-full sm:w-auto min-w-[300px] rounded border border-dpsg-beige-2 bg-white px-3 py-2 text-dpsg-blue focus:border-dpsg-cyan focus:outline-none focus:ring-1 focus:ring-dpsg-cyan"
+      >
         {events.map((evt) => (
-          <option value={evt.id}>
-            {evt.name} · {evt.startDate ?? ""}
+          <option value={evt.id} selected={evt.id === selectedEventId}>
+            {evt.name} · {evt.startDate ?? ""} {evt.published === false ? "(Entwurf)" : ""}
           </option>
         ))}
       </select>
-      <button class="inline-flex items-center justify-center rounded-lg bg-blue-500 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-400 transition-colors" type="button">Campflow aktualisieren</button>
+      <button 
+        id="refresh-btn"
+        class="bg-dpsg-blue text-white px-4 py-2 rounded font-semibold hover:bg-dpsg-blue/90 transition-colors"
+        type="button"
+      >
+        Laden
+      </button>
     </div>
+    
+    <script>
+      const eventSelect = document.getElementById('event') as HTMLSelectElement;
+      const refreshBtn = document.getElementById('refresh-btn');
+      
+      if (refreshBtn && eventSelect) {
+        refreshBtn.addEventListener('click', () => {
+          const selectedId = eventSelect.value;
+          if (selectedId) {
+            const url = new URL(window.location.href);
+            url.searchParams.set('event', selectedId);
+            window.location.href = url.toString();
+          }
+        });
+        
+        eventSelect.addEventListener('change', () => {
+          const selectedId = eventSelect.value;
+          if (selectedId) {
+            const url = new URL(window.location.href);
+            url.searchParams.set('event', selectedId);
+            window.location.href = url.toString();
+          }
+        });
+      }
+    </script>
   </section>
 
-  <section class="grid gap-4 md:grid-cols-2">
-    <div class="rounded-2xl border border-slate-800 bg-slate-950/60 p-4 shadow-lg shadow-slate-900/40">
-      <h3 class="text-base font-semibold text-white">Teilnehmer (CSV-Demo)</h3>
-      <p class="text-sm text-slate-300 mb-3">Vor- und Nachname sind das Kind; Anzahl inkl. eigenes Kind.</p>
-      <div class="rounded-lg border border-slate-800 bg-slate-900/80 px-3 py-2 text-sm text-slate-200">
-        <ul class="space-y-1 max-h-64 overflow-auto pr-1">
-          {participants.map((p) => (
-            <li class="flex justify-between">
-              <span>{p.Vorname} {p.Nachname} ({p.Gruppen})</span>
-              <span class="text-slate-400">H {p.Hinfahrt} · R {p.Rückfahrt}</span>
-            </li>
-          ))}
-        </ul>
+  <!-- Main Grid: Participants & Priority -->
+  <div class="grid gap-6 lg:grid-cols-3 mb-6">
+    
+    <!-- Participants List (takes 2 cols) -->
+    <section class="lg:col-span-2 bg-white rounded-lg border border-dpsg-beige-2 p-5 shadow-sm">
+      <h2 class="font-serif text-lg font-bold text-dpsg-blue mb-1">Teilnehmer</h2>
+      <p class="text-sm text-dpsg-blue/60 mb-4">Fahrer haben Plätze &gt; 0 eingetragen</p>
+      
+      <div class="overflow-auto max-h-80 border border-dpsg-beige-2 rounded">
+        <table class="w-full text-sm">
+          <thead class="bg-dpsg-beige-1 sticky top-0">
+            <tr class="text-left text-dpsg-blue">
+              <th class="px-3 py-2 font-semibold">Name</th>
+              <th class="px-3 py-2 font-semibold">Gruppe</th>
+              <th class="px-3 py-2 font-semibold text-center">Hin</th>
+              <th class="px-3 py-2 font-semibold text-center">Rück</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-dpsg-beige-2">
+            {participants.map((p) => (
+              <tr class="hover:bg-dpsg-beige-1/50">
+                <td class="px-3 py-2 text-dpsg-blue">{p.Vorname} {p.Nachname}</td>
+                <td class="px-3 py-2">
+                  <span class={`inline-block px-2 py-0.5 rounded text-xs font-medium text-white ${getGroupColorClass(p.Gruppen)}`}>
+                    {getShortGroupName(p.Gruppen)}
+                  </span>
+                </td>
+                <td class={`px-3 py-2 text-center font-mono ${p.Hinfahrt > 0 ? 'text-dpsg-pfadfinder font-bold' : 'text-dpsg-blue/40'}`}>
+                  {p.Hinfahrt}
+                </td>
+                <td class={`px-3 py-2 text-center font-mono ${p.Rückfahrt > 0 ? 'text-dpsg-pfadfinder font-bold' : 'text-dpsg-blue/40'}`}>
+                  {p.Rückfahrt}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
-      <p class="text-xs text-slate-400 mt-2">CSV bleibt lokal (nicht committen). Später durch Campflow-Teilnehmer ersetzt.</p>
-    </div>
+      
+      <p class="text-xs text-dpsg-blue/50 mt-2">
+        Datenquelle: {token ? "Campflow API" : "Demo-Daten"}
+      </p>
+    </section>
 
-    <div class="rounded-2xl border border-slate-800 bg-slate-950/60 p-4 shadow-lg shadow-slate-900/40">
-      <h3 class="text-base font-semibold text-white">Fahrer-Priorität</h3>
-      <p class="text-sm text-slate-300 mb-3">Leiter zuerst, dann restliche Gruppen.</p>
-      <ol class="space-y-1 text-sm text-slate-200 list-decimal list-inside">
-        {groupPriority.map((g) => (
-          <li>{g}</li>
+    <!-- Priority Sidebar -->
+    <section class="bg-white rounded-lg border border-dpsg-beige-2 p-5 shadow-sm">
+      <h2 class="font-serif text-lg font-bold text-dpsg-blue mb-3">Fahrer-Priorität</h2>
+      <p class="text-sm text-dpsg-blue/60 mb-4">Reihenfolge der Berücksichtigung</p>
+      
+      <ol class="space-y-2">
+        {groupPriority.map((g, i) => (
+          <li class="flex items-center gap-3">
+            <span class="flex-shrink-0 w-6 h-6 rounded-full bg-dpsg-blue text-white text-xs font-bold flex items-center justify-center">
+              {i + 1}
+            </span>
+            <span class={`px-2 py-1 rounded text-sm font-medium text-white ${getGroupColorClass(g)}`}>
+              {getShortGroupName(g)}
+            </span>
+          </li>
         ))}
       </ol>
-      <p class="text-xs text-slate-400 mt-2">Platzlimit je Fahrzeug: max laut Eventdaten (Hin/Rück getrennt).</p>
-    </div>
-  </section>
-
-  <section class="rounded-2xl border border-slate-800 bg-slate-950/60 p-4 shadow-lg shadow-slate-900/40">
-    <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-      <div>
-        <h3 class="text-base font-semibold text-white">Fahrtenplanung</h3>
-        <p class="text-sm text-slate-300">Hin- und Rückfahrt getrennt; manuelle Anpassung möglich.</p>
+      
+      <div class="mt-6 pt-4 border-t border-dpsg-beige-2">
+        <h3 class="text-sm font-semibold text-dpsg-blue mb-2">Legende</h3>
+        <div class="grid grid-cols-2 gap-2 text-xs">
+          <div class="flex items-center gap-2">
+            <span class="w-3 h-3 rounded bg-dpsg-leiter"></span>
+            <span class="text-dpsg-blue/70">Leitende</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="w-3 h-3 rounded bg-dpsg-jupfis"></span>
+            <span class="text-dpsg-blue/70">Jupfis</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="w-3 h-3 rounded bg-dpsg-pfadfinder"></span>
+            <span class="text-dpsg-blue/70">Pfadis</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="w-3 h-3 rounded bg-dpsg-woelflinge"></span>
+            <span class="text-dpsg-blue/70">Wölflinge</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="w-3 h-3 rounded bg-dpsg-rover"></span>
+            <span class="text-dpsg-blue/70">Rover</span>
+          </div>
+        </div>
       </div>
-      <div class="flex gap-2 text-sm">
-        <button class="rounded-lg bg-slate-800 px-3 py-2 text-white border border-slate-700">Autos vorschlagen</button>
+    </section>
+  </div>
+
+  <!-- Carpool Planning Section -->
+  <section class="bg-white rounded-lg border border-dpsg-beige-2 p-5 shadow-sm">
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-5">
+      <div>
+        <h2 class="font-serif text-lg font-bold text-dpsg-blue">Fahrtenplanung</h2>
+        <p class="text-sm text-dpsg-blue/60">Automatische Zuordnung nach Priorität</p>
+      </div>
+      
+      <div class="flex flex-wrap gap-2">
         <button
           id="export-csv"
-          class="rounded-lg bg-blue-500 px-3 py-2 text-white font-semibold hover:bg-blue-400"
+          class="bg-dpsg-cyan text-white px-4 py-2 rounded font-semibold hover:bg-dpsg-cyan/90 transition-colors"
           type="button"
         >
           CSV Export
         </button>
         <button
           id="copy-csv"
-          class="rounded-lg bg-slate-700 px-3 py-2 text-white"
+          class="bg-dpsg-beige-2 text-dpsg-blue px-4 py-2 rounded font-semibold hover:bg-dpsg-beige-2/80 transition-colors"
           type="button"
         >
-          Copy
+          Kopieren
         </button>
-        <button class="rounded-lg bg-amber-500/90 px-3 py-2 text-slate-900 font-semibold hover:bg-amber-400" type="button">PDF (später)</button>
       </div>
-      <script define:vars={{ csvExportText }}>
-        const csvText = csvExportText;
-        const exportBtn = document.getElementById('export-csv');
-        const copyBtn = document.getElementById('copy-csv');
-        if (exportBtn) {
-          exportBtn.addEventListener('click', () => {
-            const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'fahrten.csv';
-            a.click();
-            URL.revokeObjectURL(url);
-          });
-        }
-        if (copyBtn) {
-          copyBtn.addEventListener('click', () => {
-            navigator.clipboard?.writeText(csvText).catch(() => {});
-          });
-        }
-      </script>
-
     </div>
-    <div class="mt-3 grid gap-3 md:grid-cols-2">
+    
+    <script is:inline define:vars={{ csvExportText, selectedEventName }}>
+      const csvText = csvExportText;
+      const eventName = selectedEventName || 'fahrten';
+      const safeFileName = eventName.replace(/[^a-zA-Z0-9äöüÄÖÜß\-_]/g, '_').substring(0, 50);
+      
+      const exportBtn = document.getElementById('export-csv');
+      const copyBtn = document.getElementById('copy-csv');
+      
+      if (exportBtn) {
+        exportBtn.addEventListener('click', () => {
+          const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${safeFileName}_fahrten.csv`;
+          a.click();
+          URL.revokeObjectURL(url);
+        });
+      }
+      
+      if (copyBtn) {
+        copyBtn.addEventListener('click', () => {
+          navigator.clipboard?.writeText(csvText).then(() => {
+            copyBtn.textContent = 'Kopiert!';
+            setTimeout(() => { copyBtn.textContent = 'Kopieren'; }, 2000);
+          }).catch(() => {});
+        });
+      }
+    </script>
+
+    <!-- Two-Column Layout for Hin/Rück -->
+    <div class="grid gap-6 md:grid-cols-2">
       {(["Hinfahrt", "Rückfahrt"] as const).map((dir) => {
         const plan = computePlan(participants, dir);
+        const hasLeftovers = plan.leftovers.length > 0;
+        
         return (
-          <div class="rounded-xl border border-slate-800 bg-slate-900/80 p-3">
-            <h4 class="text-sm font-semibold text-white mb-2">{dir}</h4>
-            <ul class="space-y-2 text-sm text-slate-200">
+          <div>
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="font-serif font-bold text-dpsg-blue">{dir}</h3>
+              <span class={`text-sm px-2 py-0.5 rounded ${hasLeftovers ? 'bg-dpsg-red/10 text-dpsg-red' : 'bg-dpsg-pfadfinder/10 text-dpsg-pfadfinder'}`}>
+                {plan.seatsAvailable} Plätze / {plan.demand} Bedarf
+              </span>
+            </div>
+            
+            <div class="space-y-3">
               {plan.cars.map((car) => (
-                <li class="rounded-lg border border-slate-700/80 bg-slate-800/60 p-2">
-                  <div class="flex justify-between">
-                    <span>Fahrer: {car.driver.Vorname} {car.driver.Nachname} ({car.driver.Gruppen})</span>
-                    <span>Sitze: {car.seatsTotal}</span>
+                <div class="border border-dpsg-beige-2 rounded-lg p-3 bg-dpsg-beige-1/30">
+                  <div class="flex items-start justify-between mb-2">
+                    <div class="flex items-center gap-2">
+                      <span class={`w-2 h-2 rounded-full ${getGroupColorClass(car.driver.Gruppen)}`}></span>
+                      <span class="font-semibold text-dpsg-blue">
+                        {car.driver.Vorname} {car.driver.Nachname}
+                      </span>
+                    </div>
+                    <span class="text-sm bg-dpsg-blue text-white px-2 py-0.5 rounded">
+                      {car.seatsTotal} Sitze
+                    </span>
                   </div>
-                  <div class="text-slate-300">Mitfahrende: {car.passengers.map((p) => `${p.Vorname} ${p.Nachname}`).join(", ") || "-"}</div>
-                </li>
+                  
+                  {car.passengers.length > 0 ? (
+                    <div class="flex flex-wrap gap-1">
+                      {car.passengers.map((p) => (
+                        <span class="inline-flex items-center gap-1 text-sm bg-white border border-dpsg-beige-2 rounded px-2 py-0.5">
+                          <span class={`w-1.5 h-1.5 rounded-full ${getGroupColorClass(p.Gruppen)}`}></span>
+                          {p.Vorname} {p.Nachname}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <span class="text-sm text-dpsg-blue/50 italic">Keine Mitfahrer</span>
+                  )}
+                </div>
               ))}
-              {plan.leftovers.length > 0 && (
-                <li class="rounded-lg border border-amber-500/40 bg-amber-500/10 p-2 text-amber-100">
-                  <div class="font-semibold">Ohne Platz:</div>
-                  <div class="text-amber-200 text-sm">{plan.leftovers.map((p) => `${p.Vorname} ${p.Nachname}`).join(", ")}</div>
-                </li>
+              
+              {hasLeftovers && (
+                <div class="border-2 border-dashed border-dpsg-red/40 rounded-lg p-3 bg-dpsg-red/5">
+                  <div class="flex items-center gap-2 mb-2">
+                    <svg class="w-4 h-4 text-dpsg-red" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                    <span class="font-semibold text-dpsg-red">Ohne Platz ({plan.leftovers.length})</span>
+                  </div>
+                  <div class="flex flex-wrap gap-1">
+                    {plan.leftovers.map((p) => (
+                      <span class="inline-flex items-center gap-1 text-sm bg-white border border-dpsg-red/30 text-dpsg-red rounded px-2 py-0.5">
+                        <span class={`w-1.5 h-1.5 rounded-full ${getGroupColorClass(p.Gruppen)}`}></span>
+                        {p.Vorname} {p.Nachname}
+                      </span>
+                    ))}
+                  </div>
+                </div>
               )}
-            </ul>
-            <div class="mt-2 text-xs text-slate-400">Plätze: {plan.seatsAvailable} / Bedarf: {plan.demand}</div>
+              
+              {plan.cars.length === 0 && !hasLeftovers && (
+                <div class="text-center py-8 text-dpsg-blue/50">
+                  Keine Fahrer für {dir} eingetragen
+                </div>
+              )}
+            </div>
           </div>
         );
       })}
