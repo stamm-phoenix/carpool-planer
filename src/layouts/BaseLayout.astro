@@ -18,48 +18,9 @@ const { title = "Carpool Planner" } = Astro.props;
     <link href="https://fonts.googleapis.com/css2?family=Arvo:wght@400;700&display=swap" rel="stylesheet">
   </head>
   <body class="min-h-screen font-sans">
-    <!-- Header with DPSG branding -->
-    <header class="bg-dpsg-blue text-white">
-      <div class="mx-auto max-w-6xl px-4 py-4 md:px-6 lg:px-8">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-3">
-            <!-- DPSG Lilie (simplified SVG) -->
-            <svg class="h-10 w-10" viewBox="0 0 100 100" fill="currentColor">
-              <path d="M50 5 L60 25 L80 25 L65 40 L70 60 L50 50 L30 60 L35 40 L20 25 L40 25 Z" fill="currentColor"/>
-              <circle cx="50" cy="75" r="8" fill="currentColor"/>
-              <rect x="47" y="60" width="6" height="12" fill="currentColor"/>
-            </svg>
-            <div>
-              <span class="text-lg font-bold tracking-wide">DPSG</span>
-              <span class="hidden sm:inline text-sm text-dpsg-beige-1 ml-2">Carpool Planner</span>
-            </div>
-          </div>
-          <nav class="text-sm">
-            <span class="text-dpsg-beige-2">Fahrtenplanung</span>
-          </nav>
-        </div>
-      </div>
-    </header>
-
     <!-- Main content -->
     <main class="mx-auto max-w-6xl px-4 py-8 md:px-6 lg:px-8">
       <slot />
     </main>
-
-    <!-- Footer -->
-    <footer class="bg-dpsg-blue text-dpsg-beige-2 mt-12">
-      <div class="mx-auto max-w-6xl px-4 py-6 md:px-6 lg:px-8">
-        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 text-sm">
-          <div>
-            <span class="font-semibold text-white">DPSG Carpool Planner</span>
-            <span class="mx-2">·</span>
-            <span>Fahrgemeinschaften einfach planen</span>
-          </div>
-          <div class="text-dpsg-beige-2">
-            Daten via <a href="https://campflow.de" class="text-dpsg-cyan hover:text-dpsg-yellow underline">Campflow</a>
-          </div>
-        </div>
-      </div>
-    </footer>
   </body>
 </html>

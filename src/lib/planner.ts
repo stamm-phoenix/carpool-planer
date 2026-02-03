@@ -2,11 +2,16 @@ import type { Participant } from "./types";
 
 /**
  * Priority tiers for driver selection:
- * - Tier 0: Leitende (highest priority, use ALL their seats)
+ * - Tier 0: Leitende (highest priority, use ALL their seats, only drive with other Leiter)
  * - Tier 1: Rover
  * - Tier 2: Jupfis, Pfadis, Wölflinge (equal priority)
  * 
  * Within each tier, drivers with more seats are used first (fill cars completely).
+ * 
+ * Algorithm:
+ * 1. Leiter drivers fill their cars ONLY with other Leiter passengers
+ * 2. If there are leftover Leiter passengers, they go to non-Leiter cars
+ * 3. Non-Leiter drivers fill with remaining passengers (same-tier preference)
  */
 
 // Display order for UI (not the same as priority!)
@@ -67,7 +72,7 @@ export function getGroupCategory(group: string): string {
   return group || "Unbekannt";
 }
 
-function isLeiter(participant: Participant): boolean {
+export function isLeiter(participant: Participant): boolean {
   return getPriorityTier(participant.Gruppen) === 0;
 }
 
@@ -75,8 +80,11 @@ function isSameTier(a: Participant, b: Participant): boolean {
   return getPriorityTier(a.Gruppen) === getPriorityTier(b.Gruppen);
 }
 
-function hasSameLastName(a: Participant, b: Participant): boolean {
-  return a.Nachname.toLowerCase() === b.Nachname.toLowerCase();
+/**
+ * Create a unique key for a participant (for deduplication)
+ */
+export function participantKey(p: Participant): string {
+  return `${p.Vorname}|${p.Nachname}|${p.Gruppen}`;
 }
 
 export type Direction = "Hinfahrt" | "Rückfahrt";
@@ -96,82 +104,81 @@ export interface PlanResult {
   seatsAvailable: number;
 }
 
+/**
+ * Main planning function with smart driver selection:
+ * 
+ * Key rules:
+ * 1. If someone has seats > 0, they are a DRIVER (never a passenger)
+ * 2. ALL Leiter drivers always drive (Leiter cars filled with Leiter passengers only)
+ * 3. Non-Leiter drivers are added as needed to transport remaining passengers
+ * 4. Fill cars completely before adding new drivers (big cars first)
+ * 5. No person appears twice (driver can't be passenger)
+ * 6. If there are leftover passengers, ALL available drivers should be used
+ */
 export function computePlan(participants: Participant[], direction: Direction): PlanResult {
   const seatKey = direction === "Hinfahrt" ? "Hinfahrt" : "Rückfahrt";
-
-  // Alle potentiellen Fahrer sammeln
-  let potentialDrivers = participants
-    .filter((p) => (p as any)[seatKey] > 0)
-    .map((p) => ({ participant: p, seats: (p as any)[seatKey] as number }));
-
-  // Riders = alle die mitfahren müssen (anfangs alle Teilnehmer)
-  let allRiders = [...participants];
-
-  // Finde Fahrer die nur 1 Passagierplatz haben und nur ihr eigenes Kind mitnehmen würden
-  // Diese werden nicht als Fahrer eingeplant (außer Leiter)
-  const driversToExclude: Set<string> = new Set();
   
-  for (const { participant: driver, seats } of potentialDrivers) {
-    // Leiter fahren immer
-    if (isLeiter(driver)) continue;
+  // Track all driver keys - drivers can NEVER be passengers
+  const driverKeys = new Set<string>();
+  
+  // Separate drivers and passengers
+  // IMPORTANT: Anyone with seats > 0 is a driver, NOT a passenger
+  const leiterDrivers: { participant: Participant; seats: number }[] = [];
+  const nonLeiterDrivers: { participant: Participant; seats: number }[] = [];
+  const leiterPassengers: Participant[] = [];
+  const nonLeiterPassengers: Participant[] = [];
+  
+  for (const p of participants) {
+    const seats = p[seatKey] as number;
+    const isLeiterPerson = isLeiter(p);
+    const pKey = participantKey(p);
     
-    const passengerCapacity = Math.max(seats - 1, 0);
-    
-    // Nur bei genau 1 Passagierplatz prüfen
-    if (passengerCapacity !== 1) continue;
-    
-    // Prüfen ob es ein Kind mit gleichem Nachnamen gibt (das eigene Kind)
-    const ownChildren = allRiders.filter(
-      (r) => hasSameLastName(driver, r) && 
-             r !== driver && 
-             !isLeiter(r) &&
-             !(r.Vorname === driver.Vorname && r.Nachname === driver.Nachname)
-    );
-    
-    // Wenn genau 1 eigenes Kind da ist, sollte der Fahrer nicht fahren
-    // Das Kind kann bei jemand anderem mitfahren
-    if (ownChildren.length === 1) {
-      driversToExclude.add(`${driver.Vorname}|${driver.Nachname}`);
-    }
-  }
-
-  // Fahrer filtern und sortieren nach Prioritätstier, dann nach Sitzplätzen (meiste zuerst)
-  const drivers = potentialDrivers
-    .filter((d) => !driversToExclude.has(`${d.participant.Vorname}|${d.participant.Nachname}`))
-    .sort((a, b) => {
-      const tierA = getPriorityTier(a.participant.Gruppen);
-      const tierB = getPriorityTier(b.participant.Gruppen);
-      // First sort by tier (lower = higher priority)
-      if (tierA !== tierB) return tierA - tierB;
-      // Within same tier, sort by seats descending (fill bigger cars first)
-      return b.seats - a.seats;
-    });
-
-  const riders = [...participants];
-  const cars: CarAssignment[] = [];
-
-  for (const { participant: driver, seats } of drivers) {
-    // Fahrer aus Riders-Liste entfernen
-    const riderIdx = riders.findIndex((r) => r.Vorname === driver.Vorname && r.Nachname === driver.Nachname);
-    if (riderIdx !== -1) riders.splice(riderIdx, 1);
-
-    const passengerCapacity = Math.max(seats - 1, 0);
-    const passengers: Participant[] = [];
-
-    // Passagiere auswählen: gleiche Stufe bevorzugen
-    for (let i = 0; i < passengerCapacity && riders.length > 0; i++) {
-      // Erst nach gleichem Tier suchen
-      const sameTierIdx = riders.findIndex((r) => isSameTier(driver, r));
-      
-      if (sameTierIdx !== -1) {
-        // Passagier aus gleichem Tier gefunden
-        passengers.push(riders.splice(sameTierIdx, 1)[0]);
+    if (seats > 0) {
+      // This person is a DRIVER - mark them so they're never added as passenger
+      driverKeys.add(pKey);
+      if (isLeiterPerson) {
+        leiterDrivers.push({ participant: p, seats });
       } else {
-        // Keiner aus gleichem Tier übrig -> nächsten verfügbaren nehmen
-        passengers.push(riders.shift()!);
+        nonLeiterDrivers.push({ participant: p, seats });
+      }
+    } else {
+      // This person needs a ride (passenger)
+      if (isLeiterPerson) {
+        leiterPassengers.push(p);
+      } else {
+        nonLeiterPassengers.push(p);
       }
     }
-
+  }
+  
+  // Sort Leiter drivers: bigger cars first
+  leiterDrivers.sort((a, b) => b.seats - a.seats);
+  
+  // Sort non-Leiter drivers: by seats descending (fill big cars first)
+  nonLeiterDrivers.sort((a, b) => b.seats - a.seats);
+  
+  const cars: CarAssignment[] = [];
+  
+  // Mutable passenger lists
+  const availableLeiterPassengers = [...leiterPassengers];
+  const availableNonLeiterPassengers = [...nonLeiterPassengers];
+  
+  // ============================================
+  // PHASE 1: ALL Leiter drivers drive (filled with Leiter passengers ONLY)
+  // ============================================
+  for (const { participant: driver, seats } of leiterDrivers) {
+    const passengerCapacity = Math.max(seats - 1, 0);
+    const passengers: Participant[] = [];
+    
+    // Fill ONLY with Leiter passengers (who are not drivers)
+    while (passengers.length < passengerCapacity && availableLeiterPassengers.length > 0) {
+      const passenger = availableLeiterPassengers.shift()!;
+      // Double-check this passenger isn't actually a driver
+      if (!driverKeys.has(participantKey(passenger))) {
+        passengers.push(passenger);
+      }
+    }
+    
     cars.push({
       driver,
       seatsTotal: seats,
@@ -179,17 +186,204 @@ export function computePlan(participants: Participant[], direction: Direction): 
       passengers,
     });
   }
-
-  const demand = participants.length; // jeder braucht einen Platz inkl. Fahrer
+  
+  // ============================================
+  // PHASE 2: Add non-Leiter drivers to transport remaining passengers
+  // ============================================
+  
+  // Remaining passengers = overflow Leiter + all non-Leiter passengers
+  let remainingPassengers = [...availableLeiterPassengers, ...availableNonLeiterPassengers];
+  
+  // Filter out any drivers that might have snuck in
+  remainingPassengers = remainingPassengers.filter(p => !driverKeys.has(participantKey(p)));
+  
+  for (const { participant: driver, seats } of nonLeiterDrivers) {
+    // Skip drivers with 0 passenger capacity who have no one to transport
+    // But if there are still passengers, we MUST add drivers
+    const passengerCapacity = Math.max(seats - 1, 0);
+    
+    // Only skip this driver if:
+    // 1. No passengers need rides AND
+    // 2. This driver can't take anyone anyway (capacity 0)
+    if (remainingPassengers.length === 0 && passengerCapacity === 0) {
+      continue;
+    }
+    
+    // If there are still passengers needing rides, add this driver
+    // (even if they end up with fewer passengers than capacity)
+    if (remainingPassengers.length === 0) {
+      // No more passengers - we can stop adding drivers
+      break;
+    }
+    
+    const passengers: Participant[] = [];
+    
+    // Fill with available passengers, preferring same tier
+    while (passengers.length < passengerCapacity && remainingPassengers.length > 0) {
+      // Try to find same-tier passenger first
+      const sameTierIdx = remainingPassengers.findIndex((r) => isSameTier(driver, r));
+      
+      if (sameTierIdx !== -1) {
+        const passenger = remainingPassengers.splice(sameTierIdx, 1)[0];
+        passengers.push(passenger);
+      } else {
+        // No same-tier available, take first available
+        const passenger = remainingPassengers.shift()!;
+        passengers.push(passenger);
+      }
+    }
+    
+    cars.push({
+      driver,
+      seatsTotal: seats,
+      passengerCapacity,
+      passengers,
+    });
+  }
+  
+  // ============================================
+  // Leftovers = passengers who couldn't be assigned
+  // ============================================
+  const leftovers = remainingPassengers;
+  
+  // ============================================
+  // Validation: Ensure no driver appears as passenger
+  // ============================================
+  for (const car of cars) {
+    for (const p of car.passengers) {
+      const pKey = participantKey(p);
+      if (driverKeys.has(pKey)) {
+        console.error(`BUG: Driver ${p.Vorname} ${p.Nachname} appears as passenger!`);
+      }
+    }
+  }
+  
+  // Also check leftovers
+  for (const p of leftovers) {
+    const pKey = participantKey(p);
+    if (driverKeys.has(pKey)) {
+      console.error(`BUG: Driver ${p.Vorname} ${p.Nachname} appears in leftovers!`);
+    }
+  }
+  
+  const demand = participants.length;
   const seatsAvailable = cars.reduce((sum, car) => sum + car.seatsTotal, 0);
-
+  
   return {
     direction,
     cars,
-    leftovers: riders,
+    leftovers,
     demand,
     seatsAvailable,
   };
+}
+
+/**
+ * Apply manual moves to a plan result.
+ * Moves are specified as array of { passengerKey, targetCarIndex }
+ * targetCarIndex = -1 means move to leftovers
+ */
+export interface ManualMove {
+  participantKey: string;
+  fromCarIndex: number; // -1 = from leftovers
+  toCarIndex: number;   // -1 = to leftovers
+}
+
+export function applyManualMoves(plan: PlanResult, moves: ManualMove[]): PlanResult {
+  // Deep clone the plan
+  const newCars: CarAssignment[] = plan.cars.map(car => ({
+    ...car,
+    passengers: [...car.passengers],
+  }));
+  let newLeftovers = [...plan.leftovers];
+  
+  for (const move of moves) {
+    // Find and remove the passenger from source
+    let passenger: Participant | undefined;
+    
+    if (move.fromCarIndex === -1) {
+      // From leftovers
+      const idx = newLeftovers.findIndex(p => participantKey(p) === move.participantKey);
+      if (idx !== -1) {
+        passenger = newLeftovers.splice(idx, 1)[0];
+      }
+    } else if (move.fromCarIndex >= 0 && move.fromCarIndex < newCars.length) {
+      // From a car
+      const car = newCars[move.fromCarIndex];
+      const idx = car.passengers.findIndex(p => participantKey(p) === move.participantKey);
+      if (idx !== -1) {
+        passenger = car.passengers.splice(idx, 1)[0];
+      }
+    }
+    
+    if (!passenger) continue;
+    
+    // Add to destination
+    if (move.toCarIndex === -1) {
+      // To leftovers
+      newLeftovers.push(passenger);
+    } else if (move.toCarIndex >= 0 && move.toCarIndex < newCars.length) {
+      // To a car
+      newCars[move.toCarIndex].passengers.push(passenger);
+    }
+  }
+  
+  return {
+    ...plan,
+    cars: newCars,
+    leftovers: newLeftovers,
+  };
+}
+
+/**
+ * Parse moves from URL query string format: "p0-c1,p2-c0,p3-l"
+ * where pX = participant index in original list, cX = car index, l = leftovers
+ */
+export function parseMovesFromUrl(movesStr: string, plan: PlanResult): ManualMove[] {
+  if (!movesStr) return [];
+  
+  const moves: ManualMove[] = [];
+  const parts = movesStr.split(",");
+  
+  // Build a map of participant keys to their current location
+  const locationMap = new Map<string, { carIndex: number; passengerIndex: number }>();
+  
+  plan.cars.forEach((car, carIndex) => {
+    car.passengers.forEach((p, passengerIndex) => {
+      locationMap.set(participantKey(p), { carIndex, passengerIndex });
+    });
+  });
+  
+  plan.leftovers.forEach((p, idx) => {
+    locationMap.set(participantKey(p), { carIndex: -1, passengerIndex: idx });
+  });
+  
+  for (const part of parts) {
+    // Format: "key:targetCarIndex" where key is participantKey and target is car index or -1 for leftovers
+    const [pKey, target] = part.split(":");
+    if (!pKey || !target) continue;
+    
+    const location = locationMap.get(pKey);
+    if (!location) continue;
+    
+    const toCarIndex = target === "l" ? -1 : parseInt(target, 10);
+    if (isNaN(toCarIndex) && target !== "l") continue;
+    
+    moves.push({
+      participantKey: pKey,
+      fromCarIndex: location.carIndex,
+      toCarIndex,
+    });
+  }
+  
+  return moves;
+}
+
+/**
+ * Serialize moves to URL format
+ */
+export function serializeMovesToUrl(moves: ManualMove[]): string {
+  return moves.map(m => `${m.participantKey}:${m.toCarIndex === -1 ? "l" : m.toCarIndex}`).join(",");
 }
 
 export function planToCsv(plan: PlanResult): string {
@@ -201,7 +395,7 @@ export function planToCsv(plan: PlanResult): string {
   });
   if (plan.leftovers.length) {
     const rest = plan.leftovers.map((p) => `${p.Vorname} ${p.Nachname}`).join(" | ");
-    rows.push([plan.direction, "LEFTOVER", 0, rest].join(","));
+    rows.push([plan.direction, "OHNE PLATZ", 0, rest].join(","));
   }
   return [header, ...rows].join("\n");
 }

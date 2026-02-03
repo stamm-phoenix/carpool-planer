@@ -1,7 +1,7 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { fetchCampflowEvents, fetchCampflowParticipants, fetchCampflowColumns, DEFAULT_COLUMN_MAPPING } from "../lib/campflow";
-import { computePlan, groupPriorityOrder, planToCsv } from "../lib/planner";
+import { computePlan, groupPriorityOrder, planToCsv, parseMovesFromUrl, applyManualMoves, participantKey as getParticipantKey } from "../lib/planner";
 import type { CampflowEvent, Participant, CampflowColumn, ColumnMapping } from "../lib/types";
 
 const token = import.meta.env.CAMPFLOW_API_KEY ?? "";
@@ -11,6 +11,8 @@ const url = Astro.url;
 const requestedEventId = url.searchParams.get("event");
 const requestedHinCol = url.searchParams.get("hinCol");
 const requestedRueckCol = url.searchParams.get("rueckCol");
+const movesHinParam = url.searchParams.get("movesHin") ?? "";
+const movesRueckParam = url.searchParams.get("movesRueck") ?? "";
 
 const sampleEvents: CampflowEvent[] = [
   { id: "sample-1", name: "Demo Event (kein API Key)", startDate: "2026-01-01" },
@@ -86,9 +88,19 @@ if (token) {
   }
 }
 
-const planHin = computePlan(participants, "Hinfahrt");
-const planRueck = computePlan(participants, "Rückfahrt");
-const csvExportText = [planToCsv(planHin), planToCsv(planRueck)].join("\n\n");
+const basePlanHin = computePlan(participants, "Hinfahrt");
+const basePlanRueck = computePlan(participants, "Rückfahrt");
+
+// Apply manual moves from URL
+const movesHin = parseMovesFromUrl(movesHinParam, basePlanHin);
+const movesRueck = parseMovesFromUrl(movesRueckParam, basePlanRueck);
+
+const planHin = movesHin.length > 0 ? applyManualMoves(basePlanHin, movesHin) : basePlanHin;
+const planRueck = movesRueck.length > 0 ? applyManualMoves(basePlanRueck, movesRueck) : basePlanRueck;
+
+// CSV with BOM for Excel compatibility
+const csvBom = "\uFEFF";
+const csvExportText = csvBom + [planToCsv(planHin), planToCsv(planRueck)].join("\n\n");
 
 // Helper to get group color class
 function getGroupColorClass(group: string): string {
@@ -383,11 +395,11 @@ function getShortGroupName(group: string): string {
   </div>
 
   <!-- Carpool Planning Section -->
-  <section class="bg-white rounded-lg border border-dpsg-beige-2 p-5 shadow-sm">
+  <section id="plan-section" class="bg-white rounded-lg border border-dpsg-beige-2 p-5 shadow-sm">
     <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-5">
       <div>
         <h2 class="font-serif text-lg font-bold text-dpsg-blue">Fahrtenplanung</h2>
-        <p class="text-sm text-dpsg-blue/60">Automatische Zuordnung nach Priorität</p>
+        <p class="text-sm text-dpsg-blue/60">Automatische Zuordnung nach Priorität. Klicke auf einen Mitfahrer zum Verschieben.</p>
       </div>
       
       <div class="flex flex-wrap gap-2">
@@ -399,12 +411,28 @@ function getShortGroupName(group: string): string {
           CSV Export
         </button>
         <button
+          id="export-pdf"
+          class="bg-dpsg-pfadfinder text-white px-4 py-2 rounded font-semibold hover:bg-dpsg-pfadfinder/90 transition-colors"
+          type="button"
+        >
+          PDF Export
+        </button>
+        <button
           id="copy-csv"
           class="bg-dpsg-beige-2 text-dpsg-blue px-4 py-2 rounded font-semibold hover:bg-dpsg-beige-2/80 transition-colors"
           type="button"
         >
           Kopieren
         </button>
+        {(movesHinParam || movesRueckParam) && (
+          <button
+            id="reset-moves"
+            class="bg-dpsg-red/10 text-dpsg-red px-4 py-2 rounded font-semibold hover:bg-dpsg-red/20 transition-colors border border-dpsg-red/30"
+            type="button"
+          >
+            Zurücksetzen
+          </button>
+        )}
       </div>
     </div>
     
@@ -415,6 +443,8 @@ function getShortGroupName(group: string): string {
       
       const exportBtn = document.getElementById('export-csv');
       const copyBtn = document.getElementById('copy-csv');
+      const resetBtn = document.getElementById('reset-moves');
+      const pdfBtn = document.getElementById('export-pdf');
       
       if (exportBtn) {
         exportBtn.addEventListener('click', () => {
@@ -436,16 +466,74 @@ function getShortGroupName(group: string): string {
           }).catch(() => {});
         });
       }
+      
+      if (resetBtn) {
+        resetBtn.addEventListener('click', () => {
+          const url = new URL(window.location.href);
+          url.searchParams.delete('movesHin');
+          url.searchParams.delete('movesRueck');
+          window.location.href = url.toString();
+        });
+      }
+      
+      // PDF Export using html2canvas
+      if (pdfBtn) {
+        pdfBtn.addEventListener('click', async () => {
+          pdfBtn.textContent = 'Laden...';
+          pdfBtn.disabled = true;
+          
+          try {
+            // Dynamically import libraries
+            const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+              import('https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/+esm'),
+              import('https://cdn.jsdelivr.net/npm/jspdf@2.5.1/+esm')
+            ]);
+            
+            const planSection = document.getElementById('plan-section');
+            if (!planSection) return;
+            
+            const canvas = await html2canvas(planSection, {
+              scale: 2,
+              useCORS: true,
+              logging: false,
+            });
+            
+            const imgData = canvas.toDataURL('image/png');
+            const pdf = new jsPDF({
+              orientation: 'landscape',
+              unit: 'mm',
+              format: 'a4',
+            });
+            
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = pdf.internal.pageSize.getHeight();
+            const imgWidth = canvas.width;
+            const imgHeight = canvas.height;
+            const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
+            const imgX = (pdfWidth - imgWidth * ratio) / 2;
+            const imgY = 10;
+            
+            pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth * ratio, imgHeight * ratio);
+            pdf.save(`${safeFileName}_fahrten.pdf`);
+          } catch (err) {
+            console.error('PDF export failed:', err);
+            alert('PDF Export fehlgeschlagen. Bitte versuche es erneut.');
+          } finally {
+            pdfBtn.textContent = 'PDF Export';
+            pdfBtn.disabled = false;
+          }
+        });
+      }
     </script>
 
     <!-- Two-Column Layout for Hin/Rück -->
     <div class="grid gap-6 md:grid-cols-2">
       {(["Hinfahrt", "Rückfahrt"] as const).map((dir) => {
-        const plan = computePlan(participants, dir);
+        const plan = dir === "Hinfahrt" ? planHin : planRueck;
         const hasLeftovers = plan.leftovers.length > 0;
         
         return (
-          <div>
+          <div data-direction={dir}>
             <div class="flex items-center justify-between mb-3">
               <h3 class="font-serif font-bold text-dpsg-blue">{dir}</h3>
               <span class={`text-sm px-2 py-0.5 rounded ${hasLeftovers ? 'bg-dpsg-red/10 text-dpsg-red' : 'bg-dpsg-pfadfinder/10 text-dpsg-pfadfinder'}`}>
@@ -454,8 +542,12 @@ function getShortGroupName(group: string): string {
             </div>
             
             <div class="space-y-3">
-              {plan.cars.map((car) => (
-                <div class="border border-dpsg-beige-2 rounded-lg p-3 bg-dpsg-beige-1/30">
+              {plan.cars.map((car, carIndex) => (
+                <div 
+                  class="border border-dpsg-beige-2 rounded-lg p-3 bg-dpsg-beige-1/30 drop-target" 
+                  data-car-index={carIndex}
+                  data-direction={dir}
+                >
                   <div class="flex items-start justify-between mb-2">
                     <div class="flex items-center gap-2">
                       <span class={`w-2 h-2 rounded-full ${getGroupColorClass(car.driver.Gruppen)}`}></span>
@@ -464,18 +556,27 @@ function getShortGroupName(group: string): string {
                       </span>
                     </div>
                     <span class="text-sm bg-dpsg-blue text-white px-2 py-0.5 rounded">
-                      {car.seatsTotal} Sitze
+                      {car.passengers.length + 1}/{car.seatsTotal}
                     </span>
                   </div>
                   
                   {car.passengers.length > 0 ? (
                     <div class="flex flex-wrap gap-1">
-                      {car.passengers.map((p) => (
-                        <span class="inline-flex items-center gap-1 text-sm bg-white border border-dpsg-beige-2 rounded px-2 py-0.5">
-                          <span class={`w-1.5 h-1.5 rounded-full ${getGroupColorClass(p.Gruppen)}`}></span>
-                          {p.Vorname} {p.Nachname}
-                        </span>
-                      ))}
+                      {car.passengers.map((p) => {
+                        const pKey = getParticipantKey(p);
+                        return (
+                          <button 
+                            type="button"
+                            class="passenger-badge inline-flex items-center gap-1 text-sm bg-white border border-dpsg-beige-2 rounded px-2 py-0.5 hover:border-dpsg-cyan hover:bg-dpsg-cyan/10 cursor-pointer transition-colors"
+                            data-participant-key={pKey}
+                            data-from-car={carIndex}
+                            data-direction={dir}
+                          >
+                            <span class={`w-1.5 h-1.5 rounded-full ${getGroupColorClass(p.Gruppen)}`}></span>
+                            {p.Vorname} {p.Nachname}
+                          </button>
+                        );
+                      })}
                     </div>
                   ) : (
                     <span class="text-sm text-dpsg-blue/50 italic">Keine Mitfahrer</span>
@@ -484,7 +585,11 @@ function getShortGroupName(group: string): string {
               ))}
               
               {hasLeftovers && (
-                <div class="border-2 border-dashed border-dpsg-red/40 rounded-lg p-3 bg-dpsg-red/5">
+                <div 
+                  class="border-2 border-dashed border-dpsg-red/40 rounded-lg p-3 bg-dpsg-red/5 drop-target"
+                  data-car-index="-1"
+                  data-direction={dir}
+                >
                   <div class="flex items-center gap-2 mb-2">
                     <svg class="w-4 h-4 text-dpsg-red" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -492,12 +597,21 @@ function getShortGroupName(group: string): string {
                     <span class="font-semibold text-dpsg-red">Ohne Platz ({plan.leftovers.length})</span>
                   </div>
                   <div class="flex flex-wrap gap-1">
-                    {plan.leftovers.map((p) => (
-                      <span class="inline-flex items-center gap-1 text-sm bg-white border border-dpsg-red/30 text-dpsg-red rounded px-2 py-0.5">
-                        <span class={`w-1.5 h-1.5 rounded-full ${getGroupColorClass(p.Gruppen)}`}></span>
-                        {p.Vorname} {p.Nachname}
-                      </span>
-                    ))}
+                    {plan.leftovers.map((p) => {
+                      const pKey = getParticipantKey(p);
+                      return (
+                        <button 
+                          type="button"
+                          class="passenger-badge inline-flex items-center gap-1 text-sm bg-white border border-dpsg-red/30 text-dpsg-red rounded px-2 py-0.5 hover:border-dpsg-cyan hover:bg-dpsg-cyan/10 cursor-pointer transition-colors"
+                          data-participant-key={pKey}
+                          data-from-car="-1"
+                          data-direction={dir}
+                        >
+                          <span class={`w-1.5 h-1.5 rounded-full ${getGroupColorClass(p.Gruppen)}`}></span>
+                          {p.Vorname} {p.Nachname}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -512,5 +626,141 @@ function getShortGroupName(group: string): string {
         );
       })}
     </div>
+    
+    <!-- Move Selection Modal/Overlay -->
+    <div id="move-overlay" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div class="bg-white rounded-lg shadow-xl max-w-md w-full p-5">
+        <h3 class="font-serif font-bold text-dpsg-blue mb-3">Mitfahrer verschieben</h3>
+        <p class="text-sm text-dpsg-blue/70 mb-4">
+          <span id="move-passenger-name" class="font-semibold"></span> verschieben nach:
+        </p>
+        <div id="move-targets" class="space-y-2 max-h-60 overflow-y-auto"></div>
+        <div class="mt-4 pt-3 border-t border-dpsg-beige-2">
+          <button 
+            id="cancel-move" 
+            type="button"
+            class="w-full bg-dpsg-beige-2 text-dpsg-blue px-4 py-2 rounded font-semibold hover:bg-dpsg-beige-2/80"
+          >
+            Abbrechen
+          </button>
+        </div>
+      </div>
+    </div>
+    
+    <script is:inline define:vars={{ planHinCars: planHin.cars.map((c, i) => ({ index: i, driver: `${c.driver.Vorname} ${c.driver.Nachname}`, seats: c.seatsTotal, passengers: c.passengers.length })), planRueckCars: planRueck.cars.map((c, i) => ({ index: i, driver: `${c.driver.Vorname} ${c.driver.Nachname}`, seats: c.seatsTotal, passengers: c.passengers.length })) }}>
+      // Passenger move functionality
+      const overlay = document.getElementById('move-overlay');
+      const passengerNameEl = document.getElementById('move-passenger-name');
+      const moveTargetsEl = document.getElementById('move-targets');
+      const cancelBtn = document.getElementById('cancel-move');
+      
+      let selectedPassenger = null;
+      let selectedDirection = null;
+      let selectedFromCar = null;
+      
+      const carsData = {
+        'Hinfahrt': planHinCars,
+        'Rückfahrt': planRueckCars
+      };
+      
+      // Handle passenger badge clicks
+      document.querySelectorAll('.passenger-badge').forEach(badge => {
+        badge.addEventListener('click', (e) => {
+          const btn = e.currentTarget;
+          selectedPassenger = btn.dataset.participantKey;
+          selectedDirection = btn.dataset.direction;
+          selectedFromCar = parseInt(btn.dataset.fromCar, 10);
+          
+          // Get passenger name from button text
+          const name = btn.textContent.trim();
+          passengerNameEl.textContent = name;
+          
+          // Build target options
+          const cars = carsData[selectedDirection] || [];
+          let html = '';
+          
+          cars.forEach((car, idx) => {
+            if (idx === selectedFromCar) return; // Skip current car
+            const freeSeats = car.seats - car.passengers - 1;
+            const disabled = freeSeats <= 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-dpsg-cyan/10 cursor-pointer';
+            html += `
+              <button 
+                type="button"
+                class="move-target w-full text-left p-3 border border-dpsg-beige-2 rounded ${disabled}"
+                data-target-car="${idx}"
+                ${freeSeats <= 0 ? 'disabled' : ''}
+              >
+                <div class="font-semibold text-dpsg-blue">${car.driver}</div>
+                <div class="text-sm text-dpsg-blue/60">${car.passengers + 1}/${car.seats} belegt (${freeSeats} frei)</div>
+              </button>
+            `;
+          });
+          
+          // Add "Ohne Platz" option if not already there
+          if (selectedFromCar !== -1) {
+            html += `
+              <button 
+                type="button"
+                class="move-target w-full text-left p-3 border-2 border-dashed border-dpsg-red/40 rounded hover:bg-dpsg-red/10 cursor-pointer"
+                data-target-car="-1"
+              >
+                <div class="font-semibold text-dpsg-red">Ohne Platz</div>
+                <div class="text-sm text-dpsg-red/60">Zu den Übrigen verschieben</div>
+              </button>
+            `;
+          }
+          
+          moveTargetsEl.innerHTML = html;
+          
+          // Add click handlers to targets
+          document.querySelectorAll('.move-target:not([disabled])').forEach(target => {
+            target.addEventListener('click', () => {
+              const targetCar = parseInt(target.dataset.targetCar, 10);
+              applyMove(selectedPassenger, selectedFromCar, targetCar, selectedDirection);
+            });
+          });
+          
+          overlay.classList.remove('hidden');
+        });
+      });
+      
+      // Cancel button
+      if (cancelBtn) {
+        cancelBtn.addEventListener('click', () => {
+          overlay.classList.add('hidden');
+          selectedPassenger = null;
+          selectedDirection = null;
+          selectedFromCar = null;
+        });
+      }
+      
+      // Close on overlay click
+      if (overlay) {
+        overlay.addEventListener('click', (e) => {
+          if (e.target === overlay) {
+            overlay.classList.add('hidden');
+          }
+        });
+      }
+      
+      function applyMove(pKey, _fromCar, toCar, direction) {
+        const url = new URL(window.location.href);
+        const paramName = direction === 'Hinfahrt' ? 'movesHin' : 'movesRueck';
+        
+        // Get existing moves
+        let existingMoves = url.searchParams.get(paramName) || '';
+        let movesArray = existingMoves ? existingMoves.split(',') : [];
+        
+        // Remove any existing move for this participant
+        movesArray = movesArray.filter(m => !m.startsWith(pKey + ':'));
+        
+        // Add new move
+        const target = toCar === -1 ? 'l' : toCar.toString();
+        movesArray.push(`${pKey}:${target}`);
+        
+        url.searchParams.set(paramName, movesArray.join(','));
+        window.location.href = url.toString();
+      }
+    </script>
   </section>
 </BaseLayout>
