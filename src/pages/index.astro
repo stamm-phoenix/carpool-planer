@@ -445,7 +445,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
           ? `<div class="rounded border border-dpsg-beige-2 bg-dpsg-beige-1/40 p-3 text-sm text-dpsg-blue/60">Alle Teilnehmer haben einen Platz.</div>`
           : "";
 
-        return `<div><div class="flex items-center justify-between mb-3"><h3 class="font-serif font-bold text-dpsg-blue">${dir}</h3><span class="text-xs md:text-sm px-2 py-0.5 rounded ${plan.leftovers.length > 0 ? "bg-dpsg-red/10 text-dpsg-red" : "bg-dpsg-pfadfinder/10 text-dpsg-pfadfinder"}">${plan.seatsAvailable} Plätze / ${plan.demand} Bedarf</span></div><div class="space-y-3">${carsHtml}${leftoversHtml}${emptyHint}</div></div>`;
+        return `<div><div class="flex items-center justify-between mb-3"><h3 class="font-serif font-bold text-dpsg-blue">${dir}</h3><span class="text-xs md:text-sm px-2 py-0.5 rounded ${plan.leftovers.length > 0 ? "bg-dpsg-red/10 text-dpsg-red" : "bg-dpsg-pfadfinder/10 text-dpsg-pfadfinder"}">${plan.seatsAvailable} Mitfahrplätze / ${plan.demand} Mitfahrbedarf</span></div><div class="space-y-3">${carsHtml}${leftoversHtml}${emptyHint}</div></div>`;
       }).join("");
 
       const csvBom = "\uFEFF";

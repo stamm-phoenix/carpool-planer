@@ -267,8 +267,8 @@ export function computePlan(participants: Participant[], direction: Direction): 
     }
   }
   
-  const demand = participants.length;
-  const seatsAvailable = cars.reduce((sum, car) => sum + car.seatsTotal, 0);
+  const demand = leiterPassengers.length + nonLeiterPassengers.length;
+  const seatsAvailable = cars.reduce((sum, car) => sum + car.passengerCapacity, 0);
   
   return {
     direction,
