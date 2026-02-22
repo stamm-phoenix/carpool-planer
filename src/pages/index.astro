@@ -13,7 +13,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
     </div>
   </div>
 
-  <section class="bg-white rounded-lg border border-dpsg-beige-2 p-5 mb-6 shadow-sm">
+  <section class="bg-white rounded-lg border border-dpsg-beige-2 p-4 md:p-5 mb-6 shadow-sm">
     <h2 class="font-serif text-lg font-bold text-dpsg-blue mb-3">Event auswählen</h2>
     <div id="error-box" class="hidden text-sm text-dpsg-red bg-dpsg-red/10 border border-dpsg-red/30 rounded px-3 py-2 mb-4"></div>
 
@@ -34,7 +34,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
   </section>
 
   <div class="grid gap-6 lg:grid-cols-3 mb-6">
-    <section class="lg:col-span-2 bg-white rounded-lg border border-dpsg-beige-2 p-5 shadow-sm">
+    <section class="lg:col-span-2 bg-white rounded-lg border border-dpsg-beige-2 p-4 md:p-5 shadow-sm">
       <h2 class="font-serif text-lg font-bold text-dpsg-blue mb-1">Teilnehmer</h2>
       <p class="text-sm text-dpsg-blue/60 mb-4">Fahrer haben Plätze &gt; 0 eingetragen</p>
 
@@ -53,13 +53,13 @@ import BaseLayout from "../layouts/BaseLayout.astro";
       </div>
 
       <div class="overflow-auto max-h-80 border border-dpsg-beige-2 rounded">
-        <table class="w-full text-sm">
+        <table class="w-full text-xs md:text-sm">
           <thead class="bg-dpsg-beige-1 sticky top-0">
             <tr class="text-left text-dpsg-blue">
-              <th class="px-3 py-2 font-semibold">Name</th>
-              <th class="px-3 py-2 font-semibold">Gruppe</th>
-              <th class="px-3 py-2 font-semibold text-center">Hin</th>
-              <th class="px-3 py-2 font-semibold text-center">Rück</th>
+              <th class="px-2 md:px-3 py-1.5 md:py-2 font-semibold">Name</th>
+              <th class="px-2 md:px-3 py-1.5 md:py-2 font-semibold">Gruppe</th>
+              <th class="px-2 md:px-3 py-1.5 md:py-2 font-semibold text-center">Hin</th>
+              <th class="px-2 md:px-3 py-1.5 md:py-2 font-semibold text-center">Rück</th>
             </tr>
           </thead>
           <tbody id="participants-body" class="divide-y divide-dpsg-beige-2"></tbody>
@@ -68,24 +68,30 @@ import BaseLayout from "../layouts/BaseLayout.astro";
       <p id="source-label" class="text-xs text-dpsg-blue/50 mt-2"></p>
     </section>
 
-    <section class="bg-white rounded-lg border border-dpsg-beige-2 p-5 shadow-sm">
+    <section class="bg-white rounded-lg border border-dpsg-beige-2 p-4 md:p-5 shadow-sm">
       <h2 class="font-serif text-lg font-bold text-dpsg-blue mb-3">Fahrer-Priorität</h2>
       <p class="text-sm text-dpsg-blue/60 mb-4">Reihenfolge der Berücksichtigung</p>
       <ol id="priority-list" class="space-y-2"></ol>
     </section>
   </div>
 
-  <section class="bg-white rounded-lg border border-dpsg-beige-2 p-5 shadow-sm">
+  <section class="bg-white rounded-lg border border-dpsg-beige-2 p-4 md:p-5 shadow-sm">
     <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-5">
       <div>
         <h2 class="font-serif text-lg font-bold text-dpsg-blue">Fahrtenplanung</h2>
         <p class="text-sm text-dpsg-blue/60">Automatische Zuordnung nach Priorität. Mitfahrer anklicken zum Verschieben.</p>
       </div>
       <div class="flex flex-wrap gap-2">
-        <button id="export-csv" class="bg-dpsg-cyan text-white px-4 py-2 rounded font-semibold" type="button">CSV Export</button>
-        <button id="copy-csv" class="bg-dpsg-beige-2 text-dpsg-blue px-4 py-2 rounded font-semibold" type="button">Kopieren</button>
-        <button id="reset-moves" class="bg-dpsg-red/10 text-dpsg-red px-4 py-2 rounded font-semibold border border-dpsg-red/30" type="button">Zurücksetzen</button>
+        <button id="export-csv" class="bg-dpsg-cyan text-white px-3 md:px-4 py-2 rounded font-semibold text-sm md:text-base" type="button">CSV Export</button>
+        <button id="copy-csv" class="bg-dpsg-beige-2 text-dpsg-blue px-3 md:px-4 py-2 rounded font-semibold text-sm md:text-base" type="button">Kopieren</button>
+        <button id="reset-moves" class="bg-dpsg-red/10 text-dpsg-red px-3 md:px-4 py-2 rounded font-semibold border border-dpsg-red/30 text-sm md:text-base" type="button">Zurücksetzen</button>
       </div>
+    </div>
+
+    <div class="flex items-center gap-2 mb-4">
+      <button id="plan-view-all" type="button" class="rounded border border-dpsg-beige-2 px-3 py-1.5 text-xs md:text-sm text-dpsg-blue bg-dpsg-beige-1">Alles</button>
+      <button id="plan-view-unassigned" type="button" class="rounded border border-dpsg-beige-2 px-3 py-1.5 text-xs md:text-sm text-dpsg-blue bg-white">Nur ohne Platz</button>
+      <button id="plan-view-drivers" type="button" class="rounded border border-dpsg-beige-2 px-3 py-1.5 text-xs md:text-sm text-dpsg-blue bg-white">Nur Fahrer</button>
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
@@ -95,6 +101,15 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 
     <div id="plan-grid" class="grid gap-6 md:grid-cols-2"></div>
   </section>
+
+  <div id="move-modal" class="hidden fixed inset-0 z-50 bg-dpsg-blue/40 p-4">
+    <div class="mx-auto mt-12 max-w-lg rounded-lg border border-dpsg-beige-2 bg-white p-4 md:p-5 shadow-lg">
+      <h3 class="font-serif text-lg font-bold text-dpsg-blue mb-2">Mitfahrer verschieben</h3>
+      <p id="move-modal-title" class="text-sm text-dpsg-blue/70 mb-3"></p>
+      <div id="move-modal-options" class="grid grid-cols-1 gap-2 mb-3"></div>
+      <button id="move-modal-close" type="button" class="w-full rounded border border-dpsg-beige-2 px-3 py-2 text-sm text-dpsg-blue">Abbrechen</button>
+    </div>
+  </div>
 
   <script>
     // @ts-nocheck
@@ -111,7 +126,9 @@ import BaseLayout from "../layouts/BaseLayout.astro";
       columns: [],
       selectedEventId: "",
       selectedEventName: "",
-      columnMapping: { ...DEFAULT_COLUMNS }
+      columnMapping: { ...DEFAULT_COLUMNS },
+      plans: {},
+      moveSelection: null
     };
 
     const els = {
@@ -133,7 +150,14 @@ import BaseLayout from "../layouts/BaseLayout.astro";
       planGrid: document.getElementById("plan-grid"),
       exportCsv: document.getElementById("export-csv"),
       copyCsv: document.getElementById("copy-csv"),
-      resetMoves: document.getElementById("reset-moves")
+      resetMoves: document.getElementById("reset-moves"),
+      planViewAll: document.getElementById("plan-view-all"),
+      planViewUnassigned: document.getElementById("plan-view-unassigned"),
+      planViewDrivers: document.getElementById("plan-view-drivers"),
+      moveModal: document.getElementById("move-modal"),
+      moveModalTitle: document.getElementById("move-modal-title"),
+      moveModalOptions: document.getElementById("move-modal-options"),
+      moveModalClose: document.getElementById("move-modal-close")
     };
 
     function escapeHtml(value) {
@@ -167,6 +191,22 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 
     function isWinterEvent(name) {
       return /winter\s*[-_ ]?\s*wochenende/i.test(name || "");
+    }
+
+    function inferColumnRole(col) {
+      const text = `${col?.name || ""} ${col?.id || ""}`.toLowerCase();
+      if (text.includes("hinfahrt") || text.includes("hinfahrt") || text.includes("anreise") || text.includes("hin ")) return "Hinfahrt";
+      if (text.includes("rückfahrt") || text.includes("rueckfahrt") || text.includes("abreise") || text.includes("rück ")) return "Rückfahrt";
+      if (col?.id === DEFAULT_COLUMNS.hinfahrtColumn) return "Hinfahrt";
+      if (col?.id === DEFAULT_COLUMNS.rueckfahrtColumn) return "Rückfahrt";
+      return "Plätze";
+    }
+
+    function prettyColumnName(col) {
+      const role = inferColumnRole(col);
+      const base = col?.name && col.name !== col.id ? col.name : col.id;
+      if (!base) return role;
+      return `${role} · ${base}`;
     }
 
     function url() {
@@ -256,7 +296,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
       ];
 
       const unique = Array.from(new Map(options.map((o) => [o.id, o])).values());
-      const optionHtml = unique.map((col) => `<option value="${escapeHtml(col.id)}">${escapeHtml(col.name || col.id)}</option>`).join("");
+      const optionHtml = unique.map((col) => `<option value="${escapeHtml(col.id)}">${escapeHtml(prettyColumnName(col))}</option>`).join("");
       els.hinCol.innerHTML = optionHtml;
       els.rueckCol.innerHTML = optionHtml;
       els.hinCol.value = state.columnMapping.hinfahrtColumn;
@@ -290,9 +330,9 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 
       const filtered = getFilteredParticipants();
       els.participantsBody.innerHTML = filtered.length === 0
-        ? `<tr><td colspan="4" class="px-3 py-6 text-center text-dpsg-blue/60">Keine Teilnehmer für diesen Filter</td></tr>`
+        ? `<tr><td colspan="4" class="px-2 md:px-3 py-4 md:py-6 text-center text-dpsg-blue/60">Keine Teilnehmer für diesen Filter</td></tr>`
         : filtered
-          .map((p) => `<tr class="hover:bg-dpsg-beige-1/50"><td class="px-3 py-2 text-dpsg-blue">${escapeHtml(p.Vorname)} ${escapeHtml(p.Nachname)}</td><td class="px-3 py-2"><span class="inline-block px-2 py-0.5 rounded text-xs font-medium text-white ${getGroupColorClass(p.Gruppen)}">${escapeHtml(getShortGroupName(p.Gruppen))}</span></td><td class="px-3 py-2 text-center font-mono ${p.Hinfahrt > 0 ? "text-dpsg-pfadfinder font-bold" : "text-dpsg-blue/40"}">${p.Hinfahrt}</td><td class="px-3 py-2 text-center font-mono ${p.Rückfahrt > 0 ? "text-dpsg-pfadfinder font-bold" : "text-dpsg-blue/40"}">${p.Rückfahrt}</td></tr>`)
+          .map((p) => `<tr class="hover:bg-dpsg-beige-1/50"><td class="px-2 md:px-3 py-1.5 md:py-2 text-dpsg-blue">${escapeHtml(p.Vorname)} ${escapeHtml(p.Nachname)}</td><td class="px-2 md:px-3 py-1.5 md:py-2"><span class="inline-block px-1.5 md:px-2 py-0.5 rounded text-[11px] md:text-xs font-medium text-white ${getGroupColorClass(p.Gruppen)}">${escapeHtml(getShortGroupName(p.Gruppen))}</span></td><td class="px-2 md:px-3 py-1.5 md:py-2 text-center font-mono ${p.Hinfahrt > 0 ? "text-dpsg-pfadfinder font-bold" : "text-dpsg-blue/40"}">${p.Hinfahrt}</td><td class="px-2 md:px-3 py-1.5 md:py-2 text-center font-mono ${p.Rückfahrt > 0 ? "text-dpsg-pfadfinder font-bold" : "text-dpsg-blue/40"}">${p.Rückfahrt}</td></tr>`)
           .join("");
 
       els.modeLabel.textContent = `Live Campflow · ${state.participants.length} Teilnehmer (${filtered.length} gefiltert)`;
@@ -306,14 +346,77 @@ import BaseLayout from "../layouts/BaseLayout.astro";
       return { emptySeats, overloadedCars, leftovers: plan.leftovers.length };
     }
 
+    function getPlanViewMode() {
+      return getParam("planView", "all") || "all";
+    }
+
+    function updatePlanViewButtons() {
+      const mode = getPlanViewMode();
+      const active = "bg-dpsg-blue text-white border-dpsg-blue";
+      const inactive = "bg-white text-dpsg-blue border-dpsg-beige-2";
+      els.planViewAll.className = `rounded border px-3 py-1.5 text-xs md:text-sm ${mode === "all" ? active : inactive}`;
+      els.planViewUnassigned.className = `rounded border px-3 py-1.5 text-xs md:text-sm ${mode === "unassigned" ? active : inactive}`;
+      els.planViewDrivers.className = `rounded border px-3 py-1.5 text-xs md:text-sm ${mode === "drivers" ? active : inactive}`;
+    }
+
+    function applyMove(direction, from, key, to) {
+      const paramName = direction === "Hinfahrt" ? "movesHin" : "movesRueck";
+      const movesRaw = readMovesParam(paramName);
+      const moves = movesRaw ? movesRaw.split(",").filter(Boolean) : [];
+      const encoded = encodeURIComponent(key);
+      const filteredMoves = moves.filter((m) => !m.startsWith(`${encoded}:`));
+      filteredMoves.push(`${encoded}:${to === -1 ? "l" : String(to)}`);
+
+      const nextHin = paramName === "movesHin" ? filteredMoves.join(",") : readMovesParam("movesHin");
+      const nextRueck = paramName === "movesRueck" ? filteredMoves.join(",") : readMovesParam("movesRueck");
+      writeMoves(nextHin, nextRueck);
+      closeMoveModal();
+      renderPlan();
+    }
+
+    function closeMoveModal() {
+      state.moveSelection = null;
+      els.moveModal.classList.add("hidden");
+      els.moveModalOptions.innerHTML = "";
+      els.moveModalTitle.textContent = "";
+    }
+
+    function openMoveModal(direction, from, key, label, plan) {
+      state.moveSelection = { direction, from, key };
+      els.moveModalTitle.textContent = `${label} (${direction})`;
+      const carButtons = plan.cars
+        .map((car, idx) => ({
+          idx,
+          label: `${car.driver.Vorname} ${car.driver.Nachname} (${car.passengers.length + 1}/${car.seatsTotal})`
+        }))
+        .filter((entry) => entry.idx !== from)
+        .map((entry) => `<button type="button" class="rounded border border-dpsg-beige-2 px-3 py-2 text-left text-sm text-dpsg-blue hover:border-dpsg-cyan" data-target="${entry.idx}">${escapeHtml(entry.label)}</button>`)
+        .join("");
+      const leftoverButton = from === -1
+        ? ""
+        : `<button type="button" class="rounded border border-dpsg-red/40 px-3 py-2 text-left text-sm text-dpsg-red hover:border-dpsg-red" data-target="-1">Ohne Platz</button>`;
+      els.moveModalOptions.innerHTML = `${carButtons}${leftoverButton}`;
+      els.moveModal.classList.remove("hidden");
+      els.moveModalOptions.querySelectorAll("button[data-target]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const target = Number(button.dataset.target);
+          if (!Number.isInteger(target)) return;
+          applyMove(direction, from, key, target);
+        });
+      });
+    }
+
     function renderPlan() {
       const baseHin = computePlan(state.participants, "Hinfahrt");
       const baseRueck = computePlan(state.participants, "Rückfahrt");
       const movesHinStr = readMovesParam("movesHin");
       const movesRueckStr = readMovesParam("movesRueck");
+      const planViewMode = getPlanViewMode();
+      updatePlanViewButtons();
 
       const planHin = applyManualMoves(baseHin, parseMovesFromUrl(movesHinStr, baseHin));
       const planRueck = applyManualMoves(baseRueck, parseMovesFromUrl(movesRueckStr, baseRueck));
+      state.plans = { Hinfahrt: planHin, Rückfahrt: planRueck };
 
       const hin = summarize(planHin);
       const rueck = summarize(planRueck);
@@ -322,19 +425,27 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 
       const sections = [["Hinfahrt", planHin], ["Rückfahrt", planRueck]];
       els.planGrid.innerHTML = sections.map(([dir, plan]) => {
-        const carsHtml = plan.cars.map((car, carIndex) => {
-          const passengersHtml = car.passengers.length === 0
-            ? `<span class="text-sm text-dpsg-blue/50 italic">Keine Mitfahrer</span>`
-            : `<div class="flex flex-wrap gap-1">${car.passengers.map((p) => `<button type="button" class="move-passenger inline-flex items-center gap-1 text-sm bg-white border border-dpsg-beige-2 rounded px-2 py-0.5 hover:border-dpsg-cyan" data-direction="${dir}" data-key="${encodeURIComponent(participantKey(p))}" data-from="${carIndex}"><span class="w-1.5 h-1.5 rounded-full ${getGroupColorClass(p.Gruppen)}"></span>${escapeHtml(p.Vorname)} ${escapeHtml(p.Nachname)}</button>`).join("")}</div>`;
+        const carsHtml = planViewMode === "unassigned"
+          ? ""
+          : plan.cars.map((car, carIndex) => {
+            const passengersHtml = planViewMode === "drivers"
+              ? `<span class="text-xs md:text-sm text-dpsg-blue/70">${car.passengers.length} Mitfahrende</span>`
+              : car.passengers.length === 0
+                ? `<span class="text-xs md:text-sm text-dpsg-blue/50 italic">Keine Mitfahrer</span>`
+                : `<div class="flex flex-wrap gap-1">${car.passengers.map((p) => `<button type="button" class="move-passenger inline-flex items-center gap-1 text-xs md:text-sm bg-white border border-dpsg-beige-2 rounded px-1.5 md:px-2 py-0.5 hover:border-dpsg-cyan" data-direction="${dir}" data-key="${encodeURIComponent(participantKey(p))}" data-from="${carIndex}" data-label="${escapeHtml(`${p.Vorname} ${p.Nachname}`)}"><span class="w-1.5 h-1.5 rounded-full ${getGroupColorClass(p.Gruppen)}"></span>${escapeHtml(p.Vorname)} ${escapeHtml(p.Nachname)}</button>`).join("")}</div>`;
 
-          return `<div class="border border-dpsg-beige-2 rounded-lg p-3 bg-dpsg-beige-1/30"><div class="flex items-start justify-between mb-2"><div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full ${getGroupColorClass(car.driver.Gruppen)}"></span><span class="font-semibold text-dpsg-blue">${escapeHtml(car.driver.Vorname)} ${escapeHtml(car.driver.Nachname)}</span></div><span class="text-sm bg-dpsg-blue text-white px-2 py-0.5 rounded">${car.passengers.length + 1}/${car.seatsTotal}</span></div>${passengersHtml}</div>`;
-        }).join("");
+            return `<div class="border border-dpsg-beige-2 rounded-lg p-2 md:p-3 bg-dpsg-beige-1/30"><div class="flex items-start justify-between mb-2"><div class="flex items-center gap-2 min-w-0"><span class="w-2 h-2 rounded-full ${getGroupColorClass(car.driver.Gruppen)}"></span><span class="font-semibold text-dpsg-blue text-sm md:text-base truncate">${escapeHtml(car.driver.Vorname)} ${escapeHtml(car.driver.Nachname)}</span></div><span class="text-xs md:text-sm bg-dpsg-blue text-white px-2 py-0.5 rounded">${car.passengers.length + 1}/${car.seatsTotal}</span></div>${passengersHtml}</div>`;
+          }).join("");
 
         const leftoversHtml = plan.leftovers.length > 0
-          ? `<div class="border-2 border-dashed border-dpsg-red/40 rounded-lg p-3 bg-dpsg-red/5"><div class="font-semibold text-dpsg-red mb-2">Ohne Platz (${plan.leftovers.length})</div><div class="flex flex-wrap gap-1">${plan.leftovers.map((p) => `<button type="button" class="move-passenger inline-flex items-center gap-1 text-sm bg-white border border-dpsg-red/30 text-dpsg-red rounded px-2 py-0.5 hover:border-dpsg-cyan" data-direction="${dir}" data-key="${encodeURIComponent(participantKey(p))}" data-from="-1"><span class="w-1.5 h-1.5 rounded-full ${getGroupColorClass(p.Gruppen)}"></span>${escapeHtml(p.Vorname)} ${escapeHtml(p.Nachname)}</button>`).join("")}</div></div>`
+          ? `<div class="border-2 border-dashed border-dpsg-red/40 rounded-lg p-2 md:p-3 bg-dpsg-red/5"><div class="font-semibold text-dpsg-red mb-2 text-sm md:text-base">Ohne Platz (${plan.leftovers.length})</div><div class="flex flex-wrap gap-1">${plan.leftovers.map((p) => `<button type="button" class="move-passenger inline-flex items-center gap-1 text-xs md:text-sm bg-white border border-dpsg-red/30 text-dpsg-red rounded px-1.5 md:px-2 py-0.5 hover:border-dpsg-cyan" data-direction="${dir}" data-key="${encodeURIComponent(participantKey(p))}" data-from="-1" data-label="${escapeHtml(`${p.Vorname} ${p.Nachname}`)}"><span class="w-1.5 h-1.5 rounded-full ${getGroupColorClass(p.Gruppen)}"></span>${escapeHtml(p.Vorname)} ${escapeHtml(p.Nachname)}</button>`).join("")}</div></div>`
           : "";
 
-        return `<div><div class="flex items-center justify-between mb-3"><h3 class="font-serif font-bold text-dpsg-blue">${dir}</h3><span class="text-sm px-2 py-0.5 rounded ${plan.leftovers.length > 0 ? "bg-dpsg-red/10 text-dpsg-red" : "bg-dpsg-pfadfinder/10 text-dpsg-pfadfinder"}">${plan.seatsAvailable} Plätze / ${plan.demand} Bedarf</span></div><div class="space-y-3">${carsHtml}${leftoversHtml}</div></div>`;
+        const emptyHint = planViewMode === "unassigned" && plan.leftovers.length === 0
+          ? `<div class="rounded border border-dpsg-beige-2 bg-dpsg-beige-1/40 p-3 text-sm text-dpsg-blue/60">Alle Teilnehmer haben einen Platz.</div>`
+          : "";
+
+        return `<div><div class="flex items-center justify-between mb-3"><h3 class="font-serif font-bold text-dpsg-blue">${dir}</h3><span class="text-xs md:text-sm px-2 py-0.5 rounded ${plan.leftovers.length > 0 ? "bg-dpsg-red/10 text-dpsg-red" : "bg-dpsg-pfadfinder/10 text-dpsg-pfadfinder"}">${plan.seatsAvailable} Plätze / ${plan.demand} Bedarf</span></div><div class="space-y-3">${carsHtml}${leftoversHtml}${emptyHint}</div></div>`;
       }).join("");
 
       const csvBom = "\uFEFF";
@@ -364,24 +475,9 @@ import BaseLayout from "../layouts/BaseLayout.astro";
           const direction = btn.dataset.direction;
           const from = Number(btn.dataset.from);
           const key = decodeURIComponent(btn.dataset.key);
-          const plan = direction === "Hinfahrt" ? planHin : planRueck;
-          const options = plan.cars.map((car, idx) => `${idx}: ${car.driver.Vorname} ${car.driver.Nachname} (${car.passengers.length + 1}/${car.seatsTotal})`).join("\n");
-          const input = window.prompt(`Ziel für ${btn.textContent.trim()}\n${options}\nl: Ohne Platz`, "l");
-          if (input == null) return;
-          const to = input.trim().toLowerCase() === "l" ? -1 : Number(input.trim());
-          if (to < -1 || Number.isNaN(to) || to >= plan.cars.length || to === from) return;
-
-          const paramName = direction === "Hinfahrt" ? "movesHin" : "movesRueck";
-          const movesRaw = readMovesParam(paramName);
-          const moves = movesRaw ? movesRaw.split(",").filter(Boolean) : [];
-          const encoded = encodeURIComponent(key);
-          const filteredMoves = moves.filter((m) => !m.startsWith(`${encoded}:`));
-          filteredMoves.push(`${encoded}:${to === -1 ? "l" : String(to)}`);
-
-          const nextHin = paramName === "movesHin" ? filteredMoves.join(",") : readMovesParam("movesHin");
-          const nextRueck = paramName === "movesRueck" ? filteredMoves.join(",") : readMovesParam("movesRueck");
-          writeMoves(nextHin, nextRueck);
-          renderPlan();
+          const label = btn.dataset.label || btn.textContent.trim();
+          const plan = direction === "Hinfahrt" ? state.plans.Hinfahrt : state.plans.Rückfahrt;
+          openMoveModal(direction, from, key, label, plan);
         });
       });
     }
@@ -403,6 +499,27 @@ import BaseLayout from "../layouts/BaseLayout.astro";
         if (event.key === "Enter") apply();
       });
       els.filterQ.addEventListener("blur", apply);
+
+      els.planViewAll.addEventListener("click", () => {
+        setParam("planView", "");
+        renderPlan();
+      });
+      els.planViewUnassigned.addEventListener("click", () => {
+        setParam("planView", "unassigned");
+        renderPlan();
+      });
+      els.planViewDrivers.addEventListener("click", () => {
+        setParam("planView", "drivers");
+        renderPlan();
+      });
+
+      els.moveModalClose.addEventListener("click", closeMoveModal);
+      els.moveModal.addEventListener("click", (event) => {
+        if (event.target === els.moveModal) closeMoveModal();
+      });
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") closeMoveModal();
+      });
     }
 
     async function loadParticipants() {
