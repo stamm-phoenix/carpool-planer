@@ -3,6 +3,7 @@
 		"rewrite": "/index.html",
 		"exclude": [
 			"/api/*",
+			"/_astro/*",
 			"/assets/*",
 			"/*.css",
 			"/*.js",
