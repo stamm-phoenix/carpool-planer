@@ -2,16 +2,16 @@ import type { Participant } from "./types";
 
 /**
  * Priority tiers for driver selection:
- * - Tier 0: Leitende (highest priority, use ALL their seats, only drive with other Leiter)
+ * - Tier 0: Leitende (highest priority, use ALL their seats)
  * - Tier 1: Rover
  * - Tier 2: Jupfis, Pfadis, Wölflinge (equal priority)
  * 
  * Within each tier, drivers with more seats are used first (fill cars completely).
  * 
  * Algorithm:
- * 1. Leiter drivers fill their cars ONLY with other Leiter passengers
- * 2. If there are leftover Leiter passengers, they go to non-Leiter cars
- * 3. Non-Leiter drivers fill with remaining passengers (same-tier preference)
+ * 1. Leiter drivers are assigned first and their cars are filled first
+ * 2. Passenger placement prefers same-tier and family grouping (same surname)
+ * 3. Non-Leiter drivers fill with remaining passengers
  */
 
 // Display order for UI (not the same as priority!)
@@ -80,6 +80,63 @@ function isSameTier(a: Participant, b: Participant): boolean {
   return getPriorityTier(a.Gruppen) === getPriorityTier(b.Gruppen);
 }
 
+function getSurname(p: Participant): string {
+  return (p.Nachname ?? "").trim().toLowerCase();
+}
+
+function surnameCounts(passengers: Participant[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const p of passengers) {
+    const surname = getSurname(p);
+    if (!surname) continue;
+    counts.set(surname, (counts.get(surname) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function pickBestPassenger(
+  driver: Participant,
+  remaining: Participant[],
+  inCar: Participant[],
+  preferLeiterForLeiterDriver: boolean,
+): Participant | undefined {
+  if (remaining.length === 0) return undefined;
+
+  const driverSurname = getSurname(driver);
+  const inCarSurnames = new Set(inCar.map(getSurname).filter(Boolean));
+  const counts = surnameCounts(remaining);
+
+  let bestIndex = -1;
+  let bestScore = Number.NEGATIVE_INFINITY;
+
+  for (let i = 0; i < remaining.length; i += 1) {
+    const candidate = remaining[i];
+    const candidateSurname = getSurname(candidate);
+    const familyCount = candidateSurname ? (counts.get(candidateSurname) ?? 0) : 0;
+
+    let score = 0;
+
+    if (preferLeiterForLeiterDriver && isLeiter(candidate)) score += 40;
+    if (isSameTier(driver, candidate)) score += 12;
+
+    if (candidateSurname && (inCarSurnames.has(candidateSurname) || candidateSurname === driverSurname)) {
+      score += 50;
+    }
+
+    if (candidateSurname && familyCount > 1) {
+      score += inCar.length === 0 ? 18 : 10;
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestIndex = i;
+    }
+  }
+
+  if (bestIndex === -1) return undefined;
+  return remaining.splice(bestIndex, 1)[0];
+}
+
 /**
  * Create a unique key for a participant (for deduplication)
  */
@@ -110,7 +167,7 @@ export interface PlanResult {
  * 
  * Key rules:
  * 1. If someone has seats > 0, they are a DRIVER (never a passenger)
- * 2. ALL Leiter drivers always drive (Leiter cars filled with Leiter passengers only)
+ * 2. ALL Leiter drivers always drive (their cars are filled first)
  * 3. Non-Leiter drivers are added as needed to transport remaining passengers
  * 4. Fill cars completely before adding new drivers (big cars first)
  * 5. No person appears twice (driver can't be passenger)
@@ -160,24 +217,21 @@ export function computePlan(participants: Participant[], direction: Direction): 
   
   const cars: CarAssignment[] = [];
   
-  // Mutable passenger lists
-  const availableLeiterPassengers = [...leiterPassengers];
-  const availableNonLeiterPassengers = [...nonLeiterPassengers];
+  // Mutable passenger list (drivers already excluded)
+  const remainingPassengers = [...leiterPassengers, ...nonLeiterPassengers]
+    .filter((p) => !driverKeys.has(participantKey(p)));
   
   // ============================================
-  // PHASE 1: ALL Leiter drivers drive (filled with Leiter passengers ONLY)
+  // PHASE 1: ALL Leiter drivers drive (prefer Leiter, then fill remaining seats)
   // ============================================
   for (const { participant: driver, seats } of leiterDrivers) {
     const passengerCapacity = Math.max(seats - 1, 0);
     const passengers: Participant[] = [];
-    
-    // Fill ONLY with Leiter passengers (who are not drivers)
-    while (passengers.length < passengerCapacity && availableLeiterPassengers.length > 0) {
-      const passenger = availableLeiterPassengers.shift()!;
-      // Double-check this passenger isn't actually a driver
-      if (!driverKeys.has(participantKey(passenger))) {
-        passengers.push(passenger);
-      }
+
+    while (passengers.length < passengerCapacity && remainingPassengers.length > 0) {
+      const passenger = pickBestPassenger(driver, remainingPassengers, passengers, true);
+      if (!passenger) break;
+      passengers.push(passenger);
     }
     
     cars.push({
@@ -191,12 +245,6 @@ export function computePlan(participants: Participant[], direction: Direction): 
   // ============================================
   // PHASE 2: Add non-Leiter drivers to transport remaining passengers
   // ============================================
-  
-  // Remaining passengers = overflow Leiter + all non-Leiter passengers
-  let remainingPassengers = [...availableLeiterPassengers, ...availableNonLeiterPassengers];
-  
-  // Filter out any drivers that might have snuck in
-  remainingPassengers = remainingPassengers.filter(p => !driverKeys.has(participantKey(p)));
   
   for (const { participant: driver, seats } of nonLeiterDrivers) {
     // Skip drivers with 0 passenger capacity who have no one to transport
@@ -221,17 +269,9 @@ export function computePlan(participants: Participant[], direction: Direction): 
     
     // Fill with available passengers, preferring same tier
     while (passengers.length < passengerCapacity && remainingPassengers.length > 0) {
-      // Try to find same-tier passenger first
-      const sameTierIdx = remainingPassengers.findIndex((r) => isSameTier(driver, r));
-      
-      if (sameTierIdx !== -1) {
-        const passenger = remainingPassengers.splice(sameTierIdx, 1)[0];
-        passengers.push(passenger);
-      } else {
-        // No same-tier available, take first available
-        const passenger = remainingPassengers.shift()!;
-        passengers.push(passenger);
-      }
+      const passenger = pickBestPassenger(driver, remainingPassengers, passengers, false);
+      if (!passenger) break;
+      passengers.push(passenger);
     }
     
     cars.push({
