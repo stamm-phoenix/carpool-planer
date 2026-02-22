@@ -1,4 +1,6 @@
 ---
+import "../styles/global.css";
+
 interface Props {
   title?: string;
 }
@@ -11,7 +13,6 @@ const { title = "Carpool Planner" } = Astro.props;
     <meta name="viewport" content="width=device-width" />
     <meta name="generator" content={Astro.generator} />
     <title>{title} | DPSG</title>
-    <link rel="stylesheet" href="/src/styles/global.css" />
     <!-- Google Fonts: Arvo for headlines -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
