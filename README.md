@@ -14,6 +14,13 @@ Automated carpool coordination using the Campflow API. Fetches event dates to st
 - Lint: `npm run lint` (astro check)
 - Build: `npm run build`
 
+## Azure Static Web Apps
+- Deployment target is static output (`dist/`).
+- `staticwebapp.config.json` is included for SPA-style fallback and headers.
+- `api/` contains an Azure Functions endpoint (`/api/campflow`) for runtime Campflow access.
+- Set `CAMPFLOW_TOKEN` in Azure Static Web Apps application settings (Functions runtime), not in client env.
+- The frontend can call `/api/campflow` without exposing the token.
+
 ## Current scope
 - Astro + Tailwind 4 UI mit DPSG-Farben; Event-Dropdown, Teilnehmerliste, Planner für Hin/Rück getrennt.
 - Prod/Dev: In Prod Campflow (Token `CAMPFLOW_TOKEN`), sonst CSV-Fallback. Modus wird im UI angezeigt.

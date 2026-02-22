@@ -1,398 +1,57 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
-import { fetchCampflowEvents, fetchCampflowParticipants, fetchCampflowColumns, DEFAULT_COLUMN_MAPPING } from "../lib/campflow";
-import { computePlan, groupPriorityOrder, planToCsv, parseMovesFromUrl, applyManualMoves, participantKey as getParticipantKey } from "../lib/planner";
-import type { CampflowEvent, Participant, CampflowColumn, ColumnMapping } from "../lib/types";
-
-const token = import.meta.env.CAMPFLOW_TOKEN ?? "";
-
-// Get URL parameters
-const url = Astro.url;
-const requestedEventId = url.searchParams.get("event");
-const requestedHinCol = url.searchParams.get("hinCol");
-const requestedRueckCol = url.searchParams.get("rueckCol");
-const movesHinParam = url.searchParams.get("movesHin") ?? "";
-const movesRueckParam = url.searchParams.get("movesRueck") ?? "";
-const searchParam = url.searchParams.get("q")?.trim() ?? "";
-const rideFilterParam = url.searchParams.get("ride") ?? "all";
-const groupFilterParam = url.searchParams.get("group") ?? "all";
-
-const sampleEvents: CampflowEvent[] = [
-  { id: "sample-1", name: "Demo Event (kein API Key)", startDate: "2026-01-01" },
-];
-
-// Sample participants for demo/fallback when no API key is available
-const sampleParticipants: Participant[] = [
-  { Vorname: "Max", Nachname: "Mustermann", Gruppen: "Leitende", Hinfahrt: 4, Rückfahrt: 4 },
-  { Vorname: "Anna", Nachname: "Schmidt", Gruppen: "Jungpfadfinder*innen", Hinfahrt: 0, Rückfahrt: 0 },
-  { Vorname: "Tom", Nachname: "Schmidt", Gruppen: "Jungpfadfinder*innen", Hinfahrt: 0, Rückfahrt: 0 },
-  { Vorname: "Lisa", Nachname: "Weber", Gruppen: "Pfadfinder*innen", Hinfahrt: 3, Rückfahrt: 0 },
-  { Vorname: "Felix", Nachname: "Müller", Gruppen: "Wölflinge", Hinfahrt: 0, Rückfahrt: 0 },
-  { Vorname: "Sarah", Nachname: "Klein", Gruppen: "Rover", Hinfahrt: 5, Rückfahrt: 5 },
-];
-
-const groupPriority = groupPriorityOrder;
-
-let events: CampflowEvent[] = sampleEvents;
-let participants: Participant[] = sampleParticipants;
-let availableColumns: CampflowColumn[] = [];
-let modeLabel = "Demo";
-let selectedEventId = "";
-let selectedEventName = "";
-let errorMessage = "";
-
-function isWinterEvent(name: string): boolean {
-  return /winter\s*[-_ ]?\s*wochenende/i.test(name);
-}
-
-function normalizeParticipants(input: Participant[]): Participant[] {
-  return input
-    .filter((p) => `${p.Vorname ?? ""}${p.Nachname ?? ""}`.trim().length > 0)
-    .map((p) => ({
-      ...p,
-      Vorname: (p.Vorname ?? "").trim(),
-      Nachname: (p.Nachname ?? "").trim(),
-      Gruppen: (p.Gruppen ?? "").trim(),
-      Hinfahrt: Number.isFinite(p.Hinfahrt) ? Math.max(0, Math.trunc(p.Hinfahrt)) : 0,
-      Rückfahrt: Number.isFinite(p.Rückfahrt) ? Math.max(0, Math.trunc(p.Rückfahrt)) : 0,
-    }));
-}
-
-// Column mapping - use URL params or defaults
-let columnMapping: ColumnMapping = {
-  hinfahrtColumn: requestedHinCol || DEFAULT_COLUMN_MAPPING.hinfahrtColumn,
-  rueckfahrtColumn: requestedRueckCol || DEFAULT_COLUMN_MAPPING.rueckfahrtColumn,
-};
-
-// Always try to fetch from Campflow if token is available
-if (token) {
-  try {
-    const allEvents = await fetchCampflowEvents(token);
-    events = allEvents.length > 0 ? allEvents : sampleEvents;
-    
-    let selectedEvent: CampflowEvent | undefined;
-    
-    if (requestedEventId) {
-      selectedEvent = events.find((e) => e.id === requestedEventId);
-    }
-    
-    if (!selectedEvent) {
-      selectedEvent = events.find((e) => isWinterEvent(e.name) && e.name.includes("2026"))
-        ?? events.find((e) => isWinterEvent(e.name))
-        ?? events[0];
-    }
-    
-    selectedEventId = selectedEvent?.id ?? "";
-    selectedEventName = selectedEvent?.name ?? "";
-    
-    if (selectedEventId) {
-      // Fetch available columns for column selection
-      try {
-        availableColumns = await fetchCampflowColumns(selectedEventId, token);
-      } catch {
-        // Columns endpoint might not be available, continue without column selection
-        availableColumns = [];
-      }
-      
-      // Fetch participants with the column mapping
-      participants = await fetchCampflowParticipants(selectedEventId, token, columnMapping);
-    }
-    participants = normalizeParticipants(participants);
-    modeLabel = "Campflow";
-  } catch (err) {
-    console.warn("Campflow fetch failed, fallback to demo data", err);
-    errorMessage = err instanceof Error ? err.message : "Unbekannter Fehler";
-    events = sampleEvents;
-    participants = sampleParticipants;
-    modeLabel = "Fallback";
-  }
-}
-
-participants = normalizeParticipants(participants);
-
-const groupOptions = Array.from(new Set(participants.map((p) => p.Gruppen).filter(Boolean))).sort((a, b) => a.localeCompare(b, "de"));
-
-const filteredParticipants = participants.filter((p) => {
-  const fullName = `${p.Vorname} ${p.Nachname}`.toLowerCase();
-  const group = p.Gruppen.toLowerCase();
-  const matchesSearch = !searchParam || fullName.includes(searchParam.toLowerCase()) || group.includes(searchParam.toLowerCase());
-  const matchesGroup = groupFilterParam === "all" || p.Gruppen === groupFilterParam;
-  const matchesRide =
-    rideFilterParam === "all"
-    || (rideFilterParam === "drivers" && (p.Hinfahrt > 0 || p.Rückfahrt > 0))
-    || (rideFilterParam === "passengers" && p.Hinfahrt === 0 && p.Rückfahrt === 0)
-    || (rideFilterParam === "hin" && p.Hinfahrt > 0)
-    || (rideFilterParam === "rueck" && p.Rückfahrt > 0);
-
-  return matchesSearch && matchesGroup && matchesRide;
-});
-
-const basePlanHin = computePlan(participants, "Hinfahrt");
-const basePlanRueck = computePlan(participants, "Rückfahrt");
-
-// Apply manual moves from URL
-const movesHin = parseMovesFromUrl(movesHinParam, basePlanHin);
-const movesRueck = parseMovesFromUrl(movesRueckParam, basePlanRueck);
-
-const planHin = movesHin.length > 0 ? applyManualMoves(basePlanHin, movesHin) : basePlanHin;
-const planRueck = movesRueck.length > 0 ? applyManualMoves(basePlanRueck, movesRueck) : basePlanRueck;
-
-function getCapacitySummary(plan: typeof planHin) {
-  const emptySeats = plan.cars.reduce((sum, car) => sum + Math.max(0, car.seatsTotal - 1 - car.passengers.length), 0);
-  const overloadedCars = plan.cars.filter((car) => car.passengers.length > car.passengerCapacity).length;
-  return {
-    emptySeats,
-    overloadedCars,
-    leftovers: plan.leftovers.length,
-  };
-}
-
-const hinSummary = getCapacitySummary(planHin);
-const rueckSummary = getCapacitySummary(planRueck);
-
-// CSV with BOM for Excel compatibility
-const csvBom = "\uFEFF";
-const csvExportText = csvBom + [planToCsv(planHin), planToCsv(planRueck)].join("\n\n");
-
-// Helper to get group color class
-function getGroupColorClass(group: string): string {
-  if (group.toLowerCase().includes("wölflinge")) return "bg-dpsg-woelflinge";
-  if (group.toLowerCase().includes("jungpfadfinder")) return "bg-dpsg-jupfis";
-  if (group.toLowerCase().includes("pfadfinder") && !group.toLowerCase().includes("jung")) return "bg-dpsg-pfadfinder";
-  if (group.toLowerCase().includes("rover")) return "bg-dpsg-rover";
-  if (group.toLowerCase().includes("leitend") || group.toLowerCase().includes("externe") || group.toLowerCase().includes("ehemalige")) return "bg-dpsg-leiter";
-  return "bg-dpsg-beige-2";
-}
-
-// Helper to get short group name
-function getShortGroupName(group: string): string {
-  if (group.toLowerCase().includes("wölflinge")) return "Wö";
-  if (group.toLowerCase().includes("jungpfadfinder")) return "Jupfi";
-  if (group.toLowerCase().includes("pfadfinder") && !group.toLowerCase().includes("jung")) return "Pfadi";
-  if (group.toLowerCase().includes("rover")) return "Rover";
-  if (group.toLowerCase().includes("leitend") || group.toLowerCase().includes("externe") || group.toLowerCase().includes("ehemalige")) return "Leiter";
-  return "?";
-}
 ---
 
 <BaseLayout title="Fahrtenplanung">
-  <!-- Page Header -->
   <div class="mb-8">
     <h1 class="font-serif text-3xl font-bold text-dpsg-blue mb-2">Fahrtenplanung</h1>
-    {selectedEventName && (
-      <p class="text-xl text-dpsg-blue/80">{selectedEventName}</p>
-    )}
-    <p class="text-dpsg-blue/60 mt-1">
-      Hin- und Rückfahrt getrennt planen, Leiter werden priorisiert.
-    </p>
-    
-    <!-- Status Badge -->
+    <p id="event-title" class="text-xl text-dpsg-blue/80"></p>
+    <p class="text-dpsg-blue/60 mt-1">Hin- und Rückfahrt getrennt planen, Leiter werden priorisiert.</p>
     <div class="mt-3 inline-flex items-center gap-2 text-sm bg-white border border-dpsg-beige-2 rounded px-3 py-1.5">
-      <span class={`inline-block h-2 w-2 rounded-full ${token ? 'bg-dpsg-pfadfinder' : 'bg-dpsg-yellow'}`}></span>
-      <span class="text-dpsg-blue">{modeLabel} · {participants.length} Teilnehmer ({filteredParticipants.length} gefiltert)</span>
+      <span id="mode-dot" class="inline-block h-2 w-2 rounded-full bg-dpsg-yellow"></span>
+      <span id="mode-label" class="text-dpsg-blue">Lade Daten...</span>
     </div>
   </div>
 
-  <!-- Event Selection & Column Mapping -->
   <section class="bg-white rounded-lg border border-dpsg-beige-2 p-5 mb-6 shadow-sm">
     <h2 class="font-serif text-lg font-bold text-dpsg-blue mb-3">Event auswählen</h2>
-    
-    {errorMessage && (
-      <div class="text-sm text-dpsg-red bg-dpsg-red/10 border border-dpsg-red/30 rounded px-3 py-2 mb-4">
-        {errorMessage}
+    <div id="error-box" class="hidden text-sm text-dpsg-red bg-dpsg-red/10 border border-dpsg-red/30 rounded px-3 py-2 mb-4"></div>
+
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+      <div class="md:col-span-2">
+        <label for="event" class="block text-sm text-dpsg-blue mb-1">Event</label>
+        <select id="event" class="w-full rounded border border-dpsg-beige-2 bg-white px-3 py-2 text-dpsg-blue"></select>
       </div>
-    )}
-    
-    <div class="flex flex-col sm:flex-row gap-3 items-start sm:items-center mb-4">
-      <select 
-        id="event" 
-        name="event" 
-        class="w-full sm:w-auto min-w-[300px] rounded border border-dpsg-beige-2 bg-white px-3 py-2 text-dpsg-blue focus:border-dpsg-cyan focus:outline-none focus:ring-1 focus:ring-dpsg-cyan"
-      >
-        {events.map((evt) => (
-          <option value={evt.id} selected={evt.id === selectedEventId}>
-            {evt.name} · {evt.startDate ?? ""} {evt.published === false ? "(Entwurf)" : ""}
-          </option>
-        ))}
-      </select>
-      <button 
-        id="refresh-btn"
-        class="bg-dpsg-blue text-white px-4 py-2 rounded font-semibold hover:bg-dpsg-blue/90 transition-colors"
-        type="button"
-      >
-        Laden
-      </button>
+      <div>
+        <label for="hinCol" class="block text-sm text-dpsg-blue mb-1">Hinfahrt-Spalte</label>
+        <select id="hinCol" class="w-full rounded border border-dpsg-beige-2 bg-white px-3 py-2 text-sm text-dpsg-blue"></select>
+      </div>
+      <div>
+        <label for="rueckCol" class="block text-sm text-dpsg-blue mb-1">Rückfahrt-Spalte</label>
+        <select id="rueckCol" class="w-full rounded border border-dpsg-beige-2 bg-white px-3 py-2 text-sm text-dpsg-blue"></select>
+      </div>
     </div>
-    
-    <!-- Column Mapping Section - Always visible when using Campflow -->
-    {token && (
-      <div class="border-t border-dpsg-beige-2 pt-4 mt-4">
-        <h3 class="text-sm font-semibold text-dpsg-blue mb-3">Spalten-Zuordnung</h3>
-        <p class="text-xs text-dpsg-blue/60 mb-3">
-          Wähle die Campflow-Felder für Hin- und Rückfahrt-Plätze
-        </p>
-        
-        {availableColumns.length > 0 ? (
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label for="hinCol" class="block text-sm text-dpsg-blue mb-1">Hinfahrt-Spalte</label>
-              <select 
-                id="hinCol" 
-                name="hinCol" 
-                class="w-full rounded border border-dpsg-beige-2 bg-white px-3 py-2 text-sm text-dpsg-blue focus:border-dpsg-cyan focus:outline-none focus:ring-1 focus:ring-dpsg-cyan"
-              >
-                {availableColumns.map((col) => (
-                  <option value={col.id} selected={col.id === columnMapping.hinfahrtColumn}>
-                    {col.name} {col.name !== col.id ? `(${col.id})` : ""}
-                  </option>
-                ))}
-              </select>
-            </div>
-            
-            <div>
-              <label for="rueckCol" class="block text-sm text-dpsg-blue mb-1">Rückfahrt-Spalte</label>
-              <select 
-                id="rueckCol" 
-                name="rueckCol" 
-                class="w-full rounded border border-dpsg-beige-2 bg-white px-3 py-2 text-sm text-dpsg-blue focus:border-dpsg-cyan focus:outline-none focus:ring-1 focus:ring-dpsg-cyan"
-              >
-                {availableColumns.map((col) => (
-                  <option value={col.id} selected={col.id === columnMapping.rueckfahrtColumn}>
-                    {col.name} {col.name !== col.id ? `(${col.id})` : ""}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-        ) : (
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label for="hinCol" class="block text-sm text-dpsg-blue mb-1">Hinfahrt-Spalte (ID)</label>
-              <input 
-                type="text"
-                id="hinCol" 
-                name="hinCol" 
-                value={columnMapping.hinfahrtColumn}
-                placeholder="col_..."
-                class="w-full rounded border border-dpsg-beige-2 bg-white px-3 py-2 text-sm text-dpsg-blue font-mono focus:border-dpsg-cyan focus:outline-none focus:ring-1 focus:ring-dpsg-cyan"
-              />
-            </div>
-            
-            <div>
-              <label for="rueckCol" class="block text-sm text-dpsg-blue mb-1">Rückfahrt-Spalte (ID)</label>
-              <input 
-                type="text"
-                id="rueckCol" 
-                name="rueckCol" 
-                value={columnMapping.rueckfahrtColumn}
-                placeholder="col_..."
-                class="w-full rounded border border-dpsg-beige-2 bg-white px-3 py-2 text-sm text-dpsg-blue font-mono focus:border-dpsg-cyan focus:outline-none focus:ring-1 focus:ring-dpsg-cyan"
-              />
-            </div>
-          </div>
-        )}
-        
-        <p class="text-xs text-dpsg-blue/50 mt-2">
-          {availableColumns.length > 0 
-            ? `${availableColumns.length} Spalten gefunden` 
-            : "Keine Spalten erkannt - gib die Spalten-IDs manuell ein"}
-        </p>
-      </div>
-    )}
-    
-    <script>
-      function navigateWithParams() {
-        const eventSelect = document.getElementById('event') as HTMLSelectElement | null;
-        const hinColEl = document.getElementById('hinCol') as HTMLSelectElement | HTMLInputElement | null;
-        const rueckColEl = document.getElementById('rueckCol') as HTMLSelectElement | HTMLInputElement | null;
-        
-        const url = new URL(window.location.href);
-        
-        if (eventSelect?.value) {
-          url.searchParams.set('event', eventSelect.value);
-        }
-        if (hinColEl?.value) {
-          url.searchParams.set('hinCol', hinColEl.value);
-        }
-        if (rueckColEl?.value) {
-          url.searchParams.set('rueckCol', rueckColEl.value);
-        }
-        
-        window.location.href = url.toString();
-      }
-      
-      const eventSelect = document.getElementById('event') as HTMLSelectElement;
-      const refreshBtn = document.getElementById('refresh-btn');
-      const hinColEl = document.getElementById('hinCol');
-      const rueckColEl = document.getElementById('rueckCol');
-      
-      if (refreshBtn) {
-        refreshBtn.addEventListener('click', navigateWithParams);
-      }
-      
-      if (eventSelect) {
-        eventSelect.addEventListener('change', navigateWithParams);
-      }
-      
-      // Support both select and input elements for column mapping
-      if (hinColEl) {
-        hinColEl.addEventListener('change', navigateWithParams);
-        // For input fields, also trigger on Enter key
-        if (hinColEl.tagName === 'INPUT') {
-          hinColEl.addEventListener('keydown', (e) => {
-            if ((e as KeyboardEvent).key === 'Enter') navigateWithParams();
-          });
-        }
-      }
-      
-      if (rueckColEl) {
-        rueckColEl.addEventListener('change', navigateWithParams);
-        if (rueckColEl.tagName === 'INPUT') {
-          rueckColEl.addEventListener('keydown', (e) => {
-            if ((e as KeyboardEvent).key === 'Enter') navigateWithParams();
-          });
-        }
-      }
-    </script>
   </section>
 
-  <!-- Main Grid: Participants & Priority -->
   <div class="grid gap-6 lg:grid-cols-3 mb-6">
-    
-    <!-- Participants List (takes 2 cols) -->
     <section class="lg:col-span-2 bg-white rounded-lg border border-dpsg-beige-2 p-5 shadow-sm">
       <h2 class="font-serif text-lg font-bold text-dpsg-blue mb-1">Teilnehmer</h2>
       <p class="text-sm text-dpsg-blue/60 mb-4">Fahrer haben Plätze &gt; 0 eingetragen</p>
 
       <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
-        <input
-          id="filter-q"
-          type="search"
-          placeholder="Name oder Gruppe suchen"
-          value={searchParam}
-          class="rounded border border-dpsg-beige-2 bg-white px-3 py-2 text-sm text-dpsg-blue focus:border-dpsg-cyan focus:outline-none focus:ring-1 focus:ring-dpsg-cyan"
-        />
-        <select
-          id="filter-ride"
-          class="rounded border border-dpsg-beige-2 bg-white px-3 py-2 text-sm text-dpsg-blue focus:border-dpsg-cyan focus:outline-none focus:ring-1 focus:ring-dpsg-cyan"
-        >
-          <option value="all" selected={rideFilterParam === "all"}>Alle</option>
-          <option value="drivers" selected={rideFilterParam === "drivers"}>Nur Fahrer</option>
-          <option value="passengers" selected={rideFilterParam === "passengers"}>Nur Mitfahrende</option>
-          <option value="hin" selected={rideFilterParam === "hin"}>Fahrer Hinfahrt</option>
-          <option value="rueck" selected={rideFilterParam === "rueck"}>Fahrer Rückfahrt</option>
+        <input id="filter-q" type="search" placeholder="Name oder Gruppe suchen" class="rounded border border-dpsg-beige-2 bg-white px-3 py-2 text-sm text-dpsg-blue" />
+        <select id="filter-ride" class="rounded border border-dpsg-beige-2 bg-white px-3 py-2 text-sm text-dpsg-blue">
+          <option value="all">Alle</option>
+          <option value="drivers">Nur Fahrer</option>
+          <option value="passengers">Nur Mitfahrende</option>
+          <option value="hin">Fahrer Hinfahrt</option>
+          <option value="rueck">Fahrer Rückfahrt</option>
         </select>
-        <select
-          id="filter-group"
-          class="rounded border border-dpsg-beige-2 bg-white px-3 py-2 text-sm text-dpsg-blue focus:border-dpsg-cyan focus:outline-none focus:ring-1 focus:ring-dpsg-cyan"
-        >
-          <option value="all" selected={groupFilterParam === "all"}>Alle Gruppen</option>
-          {groupOptions.map((group) => (
-            <option value={group} selected={groupFilterParam === group}>{group}</option>
-          ))}
+        <select id="filter-group" class="rounded border border-dpsg-beige-2 bg-white px-3 py-2 text-sm text-dpsg-blue">
+          <option value="all">Alle Gruppen</option>
         </select>
       </div>
-      
+
       <div class="overflow-auto max-h-80 border border-dpsg-beige-2 rounded">
         <table class="w-full text-sm">
           <thead class="bg-dpsg-beige-1 sticky top-0">
@@ -403,544 +62,430 @@ function getShortGroupName(group: string): string {
               <th class="px-3 py-2 font-semibold text-center">Rück</th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-dpsg-beige-2">
-            {filteredParticipants.map((p) => (
-              <tr class="hover:bg-dpsg-beige-1/50">
-                <td class="px-3 py-2 text-dpsg-blue">{p.Vorname} {p.Nachname}</td>
-                <td class="px-3 py-2">
-                  <span class={`inline-block px-2 py-0.5 rounded text-xs font-medium text-white ${getGroupColorClass(p.Gruppen)}`}>
-                    {getShortGroupName(p.Gruppen)}
-                  </span>
-                </td>
-                <td class={`px-3 py-2 text-center font-mono ${p.Hinfahrt > 0 ? 'text-dpsg-pfadfinder font-bold' : 'text-dpsg-blue/40'}`}>
-                  {p.Hinfahrt}
-                </td>
-                <td class={`px-3 py-2 text-center font-mono ${p.Rückfahrt > 0 ? 'text-dpsg-pfadfinder font-bold' : 'text-dpsg-blue/40'}`}>
-                  {p.Rückfahrt}
-                </td>
-              </tr>
-            ))}
-            {filteredParticipants.length === 0 && (
-              <tr>
-                <td colspan="4" class="px-3 py-6 text-center text-dpsg-blue/60">Keine Teilnehmer für diesen Filter</td>
-              </tr>
-            )}
-          </tbody>
+          <tbody id="participants-body" class="divide-y divide-dpsg-beige-2"></tbody>
         </table>
       </div>
-      
-      <p class="text-xs text-dpsg-blue/50 mt-2">
-        Datenquelle: {token ? "Campflow API" : "Demo-Daten"}
-      </p>
-
-      <script>
-        const qInput = document.getElementById('filter-q') as HTMLInputElement | null;
-        const rideSelect = document.getElementById('filter-ride') as HTMLSelectElement | null;
-        const groupSelect = document.getElementById('filter-group') as HTMLSelectElement | null;
-
-        function applyFilters() {
-          const nextUrl = new URL(window.location.href);
-          const q = qInput?.value.trim() ?? '';
-          const ride = rideSelect?.value ?? 'all';
-          const group = groupSelect?.value ?? 'all';
-
-          if (q) nextUrl.searchParams.set('q', q);
-          else nextUrl.searchParams.delete('q');
-
-          if (ride !== 'all') nextUrl.searchParams.set('ride', ride);
-          else nextUrl.searchParams.delete('ride');
-
-          if (group !== 'all') nextUrl.searchParams.set('group', group);
-          else nextUrl.searchParams.delete('group');
-
-          window.location.href = nextUrl.toString();
-        }
-
-        if (rideSelect) rideSelect.addEventListener('change', applyFilters);
-        if (groupSelect) groupSelect.addEventListener('change', applyFilters);
-        if (qInput) {
-          qInput.addEventListener('keydown', (event) => {
-            if ((event as KeyboardEvent).key === 'Enter') applyFilters();
-          });
-          qInput.addEventListener('blur', () => {
-            const current = new URL(window.location.href).searchParams.get('q') ?? '';
-            if ((qInput.value ?? '').trim() !== current) applyFilters();
-          });
-        }
-      </script>
+      <p id="source-label" class="text-xs text-dpsg-blue/50 mt-2"></p>
     </section>
 
-    <!-- Priority Sidebar -->
     <section class="bg-white rounded-lg border border-dpsg-beige-2 p-5 shadow-sm">
       <h2 class="font-serif text-lg font-bold text-dpsg-blue mb-3">Fahrer-Priorität</h2>
       <p class="text-sm text-dpsg-blue/60 mb-4">Reihenfolge der Berücksichtigung</p>
-      
-      <ol class="space-y-2">
-        {groupPriority.map((g, i) => (
-          <li class="flex items-center gap-3">
-            <span class="flex-shrink-0 w-6 h-6 rounded-full bg-dpsg-blue text-white text-xs font-bold flex items-center justify-center">
-              {i + 1}
-            </span>
-            <span class={`px-2 py-1 rounded text-sm font-medium text-white ${getGroupColorClass(g)}`}>
-              {getShortGroupName(g)}
-            </span>
-          </li>
-        ))}
-      </ol>
-      
-      <div class="mt-6 pt-4 border-t border-dpsg-beige-2">
-        <h3 class="text-sm font-semibold text-dpsg-blue mb-2">Legende</h3>
-        <div class="grid grid-cols-2 gap-2 text-xs">
-          <div class="flex items-center gap-2">
-            <span class="w-3 h-3 rounded bg-dpsg-leiter"></span>
-            <span class="text-dpsg-blue/70">Leitende</span>
-          </div>
-          <div class="flex items-center gap-2">
-            <span class="w-3 h-3 rounded bg-dpsg-jupfis"></span>
-            <span class="text-dpsg-blue/70">Jupfis</span>
-          </div>
-          <div class="flex items-center gap-2">
-            <span class="w-3 h-3 rounded bg-dpsg-pfadfinder"></span>
-            <span class="text-dpsg-blue/70">Pfadis</span>
-          </div>
-          <div class="flex items-center gap-2">
-            <span class="w-3 h-3 rounded bg-dpsg-woelflinge"></span>
-            <span class="text-dpsg-blue/70">Wölflinge</span>
-          </div>
-          <div class="flex items-center gap-2">
-            <span class="w-3 h-3 rounded bg-dpsg-rover"></span>
-            <span class="text-dpsg-blue/70">Rover</span>
-          </div>
-        </div>
-      </div>
+      <ol id="priority-list" class="space-y-2"></ol>
     </section>
   </div>
 
-  <!-- Carpool Planning Section -->
-  <section id="plan-section" class="bg-white rounded-lg border border-dpsg-beige-2 p-5 shadow-sm">
+  <section class="bg-white rounded-lg border border-dpsg-beige-2 p-5 shadow-sm">
     <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-5">
       <div>
         <h2 class="font-serif text-lg font-bold text-dpsg-blue">Fahrtenplanung</h2>
-        <p class="text-sm text-dpsg-blue/60">Automatische Zuordnung nach Priorität. Klicke auf einen Mitfahrer zum Verschieben.</p>
+        <p class="text-sm text-dpsg-blue/60">Automatische Zuordnung nach Priorität. Mitfahrer anklicken zum Verschieben.</p>
       </div>
-      
       <div class="flex flex-wrap gap-2">
-        <button
-          id="export-csv"
-          class="bg-dpsg-cyan text-white px-4 py-2 rounded font-semibold hover:bg-dpsg-cyan/90 transition-colors"
-          type="button"
-        >
-          CSV Export
-        </button>
-        <button
-          id="export-pdf"
-          class="bg-dpsg-pfadfinder text-white px-4 py-2 rounded font-semibold hover:bg-dpsg-pfadfinder/90 transition-colors"
-          type="button"
-        >
-          PDF Export
-        </button>
-        <button
-          id="copy-csv"
-          class="bg-dpsg-beige-2 text-dpsg-blue px-4 py-2 rounded font-semibold hover:bg-dpsg-beige-2/80 transition-colors"
-          type="button"
-        >
-          Kopieren
-        </button>
-        {(movesHinParam || movesRueckParam) && (
-          <button
-            id="reset-moves"
-            class="bg-dpsg-red/10 text-dpsg-red px-4 py-2 rounded font-semibold hover:bg-dpsg-red/20 transition-colors border border-dpsg-red/30"
-            type="button"
-          >
-            Zurücksetzen
-          </button>
-        )}
+        <button id="export-csv" class="bg-dpsg-cyan text-white px-4 py-2 rounded font-semibold" type="button">CSV Export</button>
+        <button id="copy-csv" class="bg-dpsg-beige-2 text-dpsg-blue px-4 py-2 rounded font-semibold" type="button">Kopieren</button>
+        <button id="reset-moves" class="bg-dpsg-red/10 text-dpsg-red px-4 py-2 rounded font-semibold border border-dpsg-red/30" type="button">Zurücksetzen</button>
       </div>
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
-      <div class="rounded border border-dpsg-beige-2 bg-dpsg-beige-1/40 px-3 py-2 text-sm text-dpsg-blue">
-        <span class="font-semibold">Hinfahrt:</span>
-        <span class={hinSummary.leftovers > 0 ? 'text-dpsg-red font-semibold ml-2' : 'ml-2'}>{hinSummary.leftovers} ohne Platz</span>
-        <span class="ml-2">· {hinSummary.emptySeats} freie Plätze</span>
-        {hinSummary.overloadedCars > 0 && (
-          <span class="ml-2 text-dpsg-red font-semibold">· {hinSummary.overloadedCars} überbelegt</span>
-        )}
-      </div>
-      <div class="rounded border border-dpsg-beige-2 bg-dpsg-beige-1/40 px-3 py-2 text-sm text-dpsg-blue">
-        <span class="font-semibold">Rückfahrt:</span>
-        <span class={rueckSummary.leftovers > 0 ? 'text-dpsg-red font-semibold ml-2' : 'ml-2'}>{rueckSummary.leftovers} ohne Platz</span>
-        <span class="ml-2">· {rueckSummary.emptySeats} freie Plätze</span>
-        {rueckSummary.overloadedCars > 0 && (
-          <span class="ml-2 text-dpsg-red font-semibold">· {rueckSummary.overloadedCars} überbelegt</span>
-        )}
-      </div>
+      <div id="hin-summary" class="rounded border border-dpsg-beige-2 bg-dpsg-beige-1/40 px-3 py-2 text-sm text-dpsg-blue"></div>
+      <div id="rueck-summary" class="rounded border border-dpsg-beige-2 bg-dpsg-beige-1/40 px-3 py-2 text-sm text-dpsg-blue"></div>
     </div>
-    
-    <script is:inline define:vars={{ csvExportText, selectedEventName, selectedEventId }}>
-      const csvText = csvExportText;
-      const eventName = selectedEventName || 'fahrten';
-      const safeFileName = eventName.replace(/[^a-zA-Z0-9äöüÄÖÜß\-_]/g, '_').substring(0, 50);
-      const exportStorageKey = `carpool-moves:${selectedEventId || 'default'}`;
-      
-      const exportBtn = document.getElementById('export-csv');
-      const copyBtn = document.getElementById('copy-csv');
-      const resetBtn = document.getElementById('reset-moves');
-      const pdfBtn = document.getElementById('export-pdf');
-      
-      if (exportBtn) {
-        exportBtn.addEventListener('click', () => {
-          const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `${safeFileName}_fahrten.csv`;
-          a.click();
-          URL.revokeObjectURL(url);
-        });
-      }
-      
-      if (copyBtn) {
-        copyBtn.addEventListener('click', () => {
-          navigator.clipboard?.writeText(csvText).then(() => {
-            copyBtn.textContent = 'Kopiert!';
-            setTimeout(() => { copyBtn.textContent = 'Kopieren'; }, 2000);
-          }).catch(() => {});
-        });
-      }
-      
-      if (resetBtn) {
-        resetBtn.addEventListener('click', () => {
-          try {
-            window.localStorage.removeItem(exportStorageKey);
-          } catch {
-            // ignore localStorage failures
-          }
-          const url = new URL(window.location.href);
-          url.searchParams.delete('movesHin');
-          url.searchParams.delete('movesRueck');
-          window.location.href = url.toString();
-        });
-      }
-      
-      // PDF Export using html2canvas
-      if (pdfBtn) {
-        pdfBtn.addEventListener('click', async () => {
-          pdfBtn.textContent = 'Laden...';
-          pdfBtn.disabled = true;
-          
-          try {
-            // Dynamically import libraries
-            const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
-              import('https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/+esm'),
-              import('https://cdn.jsdelivr.net/npm/jspdf@2.5.1/+esm')
-            ]);
-            
-            const planSection = document.getElementById('plan-section');
-            if (!planSection) return;
-            
-            const canvas = await html2canvas(planSection, {
-              scale: 2,
-              useCORS: true,
-              logging: false,
-            });
-            
-            const imgData = canvas.toDataURL('image/png');
-            const pdf = new jsPDF({
-              orientation: 'landscape',
-              unit: 'mm',
-              format: 'a4',
-            });
-            
-            const pdfWidth = pdf.internal.pageSize.getWidth();
-            const pdfHeight = pdf.internal.pageSize.getHeight();
-            const imgWidth = canvas.width;
-            const imgHeight = canvas.height;
-            const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
-            const imgX = (pdfWidth - imgWidth * ratio) / 2;
-            const imgY = 10;
-            
-            pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth * ratio, imgHeight * ratio);
-            pdf.save(`${safeFileName}_fahrten.pdf`);
-          } catch (err) {
-            console.error('PDF export failed:', err);
-            alert('PDF Export fehlgeschlagen. Bitte versuche es erneut.');
-          } finally {
-            pdfBtn.textContent = 'PDF Export';
-            pdfBtn.disabled = false;
-          }
-        });
-      }
-    </script>
 
-    <!-- Two-Column Layout for Hin/Rück -->
-    <div class="grid gap-6 md:grid-cols-2">
-      {(["Hinfahrt", "Rückfahrt"] as const).map((dir) => {
-        const plan = dir === "Hinfahrt" ? planHin : planRueck;
-        const hasLeftovers = plan.leftovers.length > 0;
-        
-        return (
-          <div data-direction={dir}>
-            <div class="flex items-center justify-between mb-3">
-              <h3 class="font-serif font-bold text-dpsg-blue">{dir}</h3>
-              <span class={`text-sm px-2 py-0.5 rounded ${hasLeftovers ? 'bg-dpsg-red/10 text-dpsg-red' : 'bg-dpsg-pfadfinder/10 text-dpsg-pfadfinder'}`}>
-                {plan.seatsAvailable} Plätze / {plan.demand} Bedarf
-              </span>
-            </div>
-            
-            <div class="space-y-3">
-              {plan.cars.map((car, carIndex) => (
-                <div 
-                  class="border border-dpsg-beige-2 rounded-lg p-3 bg-dpsg-beige-1/30 drop-target" 
-                  data-car-index={carIndex}
-                  data-direction={dir}
-                >
-                  <div class="flex items-start justify-between mb-2">
-                    <div class="flex items-center gap-2">
-                      <span class={`w-2 h-2 rounded-full ${getGroupColorClass(car.driver.Gruppen)}`}></span>
-                      <span class="font-semibold text-dpsg-blue">
-                        {car.driver.Vorname} {car.driver.Nachname}
-                      </span>
-                    </div>
-                    <span class="text-sm bg-dpsg-blue text-white px-2 py-0.5 rounded">
-                      {car.passengers.length + 1}/{car.seatsTotal}
-                    </span>
-                  </div>
-                  
-                  {car.passengers.length > 0 ? (
-                    <div class="flex flex-wrap gap-1">
-                      {car.passengers.map((p) => {
-                        const pKey = getParticipantKey(p);
-                        return (
-                          <button 
-                            type="button"
-                            class="passenger-badge inline-flex items-center gap-1 text-sm bg-white border border-dpsg-beige-2 rounded px-2 py-0.5 hover:border-dpsg-cyan hover:bg-dpsg-cyan/10 cursor-pointer transition-colors"
-                            data-participant-key={pKey}
-                            data-from-car={carIndex}
-                            data-direction={dir}
-                          >
-                            <span class={`w-1.5 h-1.5 rounded-full ${getGroupColorClass(p.Gruppen)}`}></span>
-                            {p.Vorname} {p.Nachname}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <span class="text-sm text-dpsg-blue/50 italic">Keine Mitfahrer</span>
-                  )}
-                </div>
-              ))}
-              
-              {hasLeftovers && (
-                <div 
-                  class="border-2 border-dashed border-dpsg-red/40 rounded-lg p-3 bg-dpsg-red/5 drop-target"
-                  data-car-index="-1"
-                  data-direction={dir}
-                >
-                  <div class="flex items-center gap-2 mb-2">
-                    <svg class="w-4 h-4 text-dpsg-red" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                    </svg>
-                    <span class="font-semibold text-dpsg-red">Ohne Platz ({plan.leftovers.length})</span>
-                  </div>
-                  <div class="flex flex-wrap gap-1">
-                    {plan.leftovers.map((p) => {
-                      const pKey = getParticipantKey(p);
-                      return (
-                        <button 
-                          type="button"
-                          class="passenger-badge inline-flex items-center gap-1 text-sm bg-white border border-dpsg-red/30 text-dpsg-red rounded px-2 py-0.5 hover:border-dpsg-cyan hover:bg-dpsg-cyan/10 cursor-pointer transition-colors"
-                          data-participant-key={pKey}
-                          data-from-car="-1"
-                          data-direction={dir}
-                        >
-                          <span class={`w-1.5 h-1.5 rounded-full ${getGroupColorClass(p.Gruppen)}`}></span>
-                          {p.Vorname} {p.Nachname}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-              
-              {plan.cars.length === 0 && !hasLeftovers && (
-                <div class="text-center py-8 text-dpsg-blue/50">
-                  Keine Fahrer für {dir} eingetragen
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-    
-    <!-- Move Selection Modal/Overlay -->
-    <div id="move-overlay" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div class="bg-white rounded-lg shadow-xl max-w-md w-full p-5">
-        <h3 class="font-serif font-bold text-dpsg-blue mb-3">Mitfahrer verschieben</h3>
-        <p class="text-sm text-dpsg-blue/70 mb-4">
-          <span id="move-passenger-name" class="font-semibold"></span> verschieben nach:
-        </p>
-        <div id="move-targets" class="space-y-2 max-h-60 overflow-y-auto"></div>
-        <div class="mt-4 pt-3 border-t border-dpsg-beige-2">
-          <button 
-            id="cancel-move" 
-            type="button"
-            class="w-full bg-dpsg-beige-2 text-dpsg-blue px-4 py-2 rounded font-semibold hover:bg-dpsg-beige-2/80"
-          >
-            Abbrechen
-          </button>
-        </div>
-      </div>
-    </div>
-    
-    <script is:inline define:vars={{ planHinCars: planHin.cars.map((c, i) => ({ index: i, driver: `${c.driver.Vorname} ${c.driver.Nachname}`, seats: c.seatsTotal, passengers: c.passengers.length })), planRueckCars: planRueck.cars.map((c, i) => ({ index: i, driver: `${c.driver.Vorname} ${c.driver.Nachname}`, seats: c.seatsTotal, passengers: c.passengers.length })), selectedEventId }}>
-      // Passenger move functionality
-      const overlay = document.getElementById('move-overlay');
-      const passengerNameEl = document.getElementById('move-passenger-name');
-      const moveTargetsEl = document.getElementById('move-targets');
-      const cancelBtn = document.getElementById('cancel-move');
-      
-      let selectedPassenger = null;
-      let selectedDirection = null;
-      let selectedFromCar = null;
-      
-      const carsData = {
-        'Hinfahrt': planHinCars,
-        'Rückfahrt': planRueckCars
+    <div id="plan-grid" class="grid gap-6 md:grid-cols-2"></div>
+  </section>
+
+  <script>
+    // @ts-nocheck
+    import { computePlan, applyManualMoves, parseMovesFromUrl, planToCsv, groupPriorityOrder, participantKey } from "../lib/planner";
+
+    const DEFAULT_COLUMNS = {
+      hinfahrtColumn: "col_K0HMI9HMkVblaqpBqFBu",
+      rueckfahrtColumn: "col_tSMUO3gitt0dXFMOhWGq"
+    };
+
+    const state = {
+      events: [],
+      participants: [],
+      columns: [],
+      selectedEventId: "",
+      selectedEventName: "",
+      columnMapping: { ...DEFAULT_COLUMNS }
+    };
+
+    const els = {
+      eventTitle: document.getElementById("event-title"),
+      modeDot: document.getElementById("mode-dot"),
+      modeLabel: document.getElementById("mode-label"),
+      sourceLabel: document.getElementById("source-label"),
+      errorBox: document.getElementById("error-box"),
+      event: document.getElementById("event"),
+      hinCol: document.getElementById("hinCol"),
+      rueckCol: document.getElementById("rueckCol"),
+      filterQ: document.getElementById("filter-q"),
+      filterRide: document.getElementById("filter-ride"),
+      filterGroup: document.getElementById("filter-group"),
+      participantsBody: document.getElementById("participants-body"),
+      priorityList: document.getElementById("priority-list"),
+      hinSummary: document.getElementById("hin-summary"),
+      rueckSummary: document.getElementById("rueck-summary"),
+      planGrid: document.getElementById("plan-grid"),
+      exportCsv: document.getElementById("export-csv"),
+      copyCsv: document.getElementById("copy-csv"),
+      resetMoves: document.getElementById("reset-moves")
+    };
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function getGroupColorClass(group) {
+      const g = (group || "").toLowerCase();
+      if (g.includes("wölflinge") || g.includes("woelf")) return "bg-dpsg-woelflinge";
+      if (g.includes("jungpfadfinder")) return "bg-dpsg-jupfis";
+      if (g.includes("pfadfinder") && !g.includes("jung")) return "bg-dpsg-pfadfinder";
+      if (g.includes("rover")) return "bg-dpsg-rover";
+      if (g.includes("leitend") || g.includes("externe") || g.includes("ehemalige")) return "bg-dpsg-leiter";
+      return "bg-dpsg-beige-2";
+    }
+
+    function getShortGroupName(group) {
+      const g = (group || "").toLowerCase();
+      if (g.includes("wölflinge") || g.includes("woelf")) return "Wö";
+      if (g.includes("jungpfadfinder")) return "Jupfi";
+      if (g.includes("pfadfinder") && !g.includes("jung")) return "Pfadi";
+      if (g.includes("rover")) return "Rover";
+      if (g.includes("leitend") || g.includes("externe") || g.includes("ehemalige")) return "Leiter";
+      return "?";
+    }
+
+    function isWinterEvent(name) {
+      return /winter\s*[-_ ]?\s*wochenende/i.test(name || "");
+    }
+
+    function url() {
+      return new URL(window.location.href);
+    }
+
+    function getParam(name, fallback = "") {
+      return url().searchParams.get(name) ?? fallback;
+    }
+
+    function setParam(name, value) {
+      const next = url();
+      if (value) next.searchParams.set(name, value);
+      else next.searchParams.delete(name);
+      window.history.replaceState({}, "", next);
+    }
+
+    function getStorageKey() {
+      return `carpool-moves:${state.selectedEventId || "default"}`;
+    }
+
+    function readMovesParam(name) {
+      const fromUrl = getParam(name, "");
+      if (fromUrl) return fromUrl;
+
+      try {
+        const raw = window.localStorage.getItem(getStorageKey());
+        if (!raw) return "";
+        const parsed = JSON.parse(raw);
+        return parsed?.[name] ?? "";
+      } catch {
+        return "";
+      }
+    }
+
+    function writeMoves(hin, rueck) {
+      setParam("movesHin", hin);
+      setParam("movesRueck", rueck);
+      try {
+        window.localStorage.setItem(getStorageKey(), JSON.stringify({ movesHin: hin, movesRueck: rueck }));
+      } catch {
+      }
+    }
+
+    function normalizeParticipants(rows) {
+      return rows
+        .filter((p) => `${p.Vorname || ""}${p.Nachname || ""}`.trim().length > 0)
+        .map((p) => ({
+          ...p,
+          Vorname: (p.Vorname || "").trim(),
+          Nachname: (p.Nachname || "").trim(),
+          Gruppen: (p.Gruppen || "").trim(),
+          Hinfahrt: Number.isFinite(p.Hinfahrt) ? Math.max(0, Math.trunc(p.Hinfahrt)) : 0,
+          Rückfahrt: Number.isFinite(p.Rückfahrt) ? Math.max(0, Math.trunc(p.Rückfahrt)) : 0
+        }));
+    }
+
+    async function apiFetch(params) {
+      const query = new URLSearchParams(params);
+      const res = await fetch(`/api/campflow?${query.toString()}`);
+      if (!res.ok) {
+        let msg = `${res.status} ${res.statusText}`;
+        try {
+          const body = await res.json();
+          if (body?.error) msg = body.error;
+        } catch {
+        }
+        throw new Error(msg);
+      }
+      return res.json();
+    }
+
+    function buildPriorityList() {
+      els.priorityList.innerHTML = groupPriorityOrder
+        .map((g, i) => `<li class="flex items-center gap-3"><span class="flex-shrink-0 w-6 h-6 rounded-full bg-dpsg-blue text-white text-xs font-bold flex items-center justify-center">${i + 1}</span><span class="px-2 py-1 rounded text-sm font-medium text-white ${getGroupColorClass(g)}">${escapeHtml(getShortGroupName(g))}</span></li>`)
+        .join("");
+    }
+
+    function renderEventControls() {
+      els.event.innerHTML = state.events
+        .map((evt) => `<option value="${escapeHtml(evt.id)}" ${evt.id === state.selectedEventId ? "selected" : ""}>${escapeHtml(evt.name)} · ${escapeHtml(evt.startDate || "")}</option>`)
+        .join("");
+
+      const options = state.columns.length > 0 ? state.columns : [
+        { id: state.columnMapping.hinfahrtColumn, name: state.columnMapping.hinfahrtColumn },
+        { id: state.columnMapping.rueckfahrtColumn, name: state.columnMapping.rueckfahrtColumn }
+      ];
+
+      const unique = Array.from(new Map(options.map((o) => [o.id, o])).values());
+      const optionHtml = unique.map((col) => `<option value="${escapeHtml(col.id)}">${escapeHtml(col.name || col.id)}</option>`).join("");
+      els.hinCol.innerHTML = optionHtml;
+      els.rueckCol.innerHTML = optionHtml;
+      els.hinCol.value = state.columnMapping.hinfahrtColumn;
+      els.rueckCol.value = state.columnMapping.rueckfahrtColumn;
+      els.eventTitle.textContent = state.selectedEventName;
+    }
+
+    function getFilteredParticipants() {
+      const q = (els.filterQ.value || "").trim().toLowerCase();
+      const ride = els.filterRide.value || "all";
+      const group = els.filterGroup.value || "all";
+
+      return state.participants.filter((p) => {
+        const fullName = `${p.Vorname} ${p.Nachname}`.toLowerCase();
+        const pGroup = (p.Gruppen || "").toLowerCase();
+        const matchesSearch = !q || fullName.includes(q) || pGroup.includes(q);
+        const matchesGroup = group === "all" || p.Gruppen === group;
+        const matchesRide = ride === "all"
+          || (ride === "drivers" && (p.Hinfahrt > 0 || p.Rückfahrt > 0))
+          || (ride === "passengers" && p.Hinfahrt === 0 && p.Rückfahrt === 0)
+          || (ride === "hin" && p.Hinfahrt > 0)
+          || (ride === "rueck" && p.Rückfahrt > 0);
+        return matchesSearch && matchesGroup && matchesRide;
+      });
+    }
+
+    function renderParticipants() {
+      const groups = Array.from(new Set(state.participants.map((p) => p.Gruppen).filter(Boolean))).sort((a, b) => a.localeCompare(b, "de"));
+      const selectedGroup = getParam("group", "all");
+      els.filterGroup.innerHTML = `<option value="all">Alle Gruppen</option>${groups.map((g) => `<option value="${escapeHtml(g)}" ${g === selectedGroup ? "selected" : ""}>${escapeHtml(g)}</option>`).join("")}`;
+
+      const filtered = getFilteredParticipants();
+      els.participantsBody.innerHTML = filtered.length === 0
+        ? `<tr><td colspan="4" class="px-3 py-6 text-center text-dpsg-blue/60">Keine Teilnehmer für diesen Filter</td></tr>`
+        : filtered
+          .map((p) => `<tr class="hover:bg-dpsg-beige-1/50"><td class="px-3 py-2 text-dpsg-blue">${escapeHtml(p.Vorname)} ${escapeHtml(p.Nachname)}</td><td class="px-3 py-2"><span class="inline-block px-2 py-0.5 rounded text-xs font-medium text-white ${getGroupColorClass(p.Gruppen)}">${escapeHtml(getShortGroupName(p.Gruppen))}</span></td><td class="px-3 py-2 text-center font-mono ${p.Hinfahrt > 0 ? "text-dpsg-pfadfinder font-bold" : "text-dpsg-blue/40"}">${p.Hinfahrt}</td><td class="px-3 py-2 text-center font-mono ${p.Rückfahrt > 0 ? "text-dpsg-pfadfinder font-bold" : "text-dpsg-blue/40"}">${p.Rückfahrt}</td></tr>`)
+          .join("");
+
+      els.modeLabel.textContent = `Live Campflow · ${state.participants.length} Teilnehmer (${filtered.length} gefiltert)`;
+      els.modeDot.className = "inline-block h-2 w-2 rounded-full bg-dpsg-pfadfinder";
+      els.sourceLabel.textContent = "Datenquelle: Azure SWA Function /api/campflow";
+    }
+
+    function summarize(plan) {
+      const emptySeats = plan.cars.reduce((sum, car) => sum + Math.max(0, car.seatsTotal - 1 - car.passengers.length), 0);
+      const overloadedCars = plan.cars.filter((car) => car.passengers.length > car.passengerCapacity).length;
+      return { emptySeats, overloadedCars, leftovers: plan.leftovers.length };
+    }
+
+    function renderPlan() {
+      const baseHin = computePlan(state.participants, "Hinfahrt");
+      const baseRueck = computePlan(state.participants, "Rückfahrt");
+      const movesHinStr = readMovesParam("movesHin");
+      const movesRueckStr = readMovesParam("movesRueck");
+
+      const planHin = applyManualMoves(baseHin, parseMovesFromUrl(movesHinStr, baseHin));
+      const planRueck = applyManualMoves(baseRueck, parseMovesFromUrl(movesRueckStr, baseRueck));
+
+      const hin = summarize(planHin);
+      const rueck = summarize(planRueck);
+      els.hinSummary.innerHTML = `<span class="font-semibold">Hinfahrt:</span> <span class="${hin.leftovers > 0 ? "text-dpsg-red font-semibold" : ""}">${hin.leftovers} ohne Platz</span> · ${hin.emptySeats} freie Plätze${hin.overloadedCars > 0 ? ` · <span class="text-dpsg-red font-semibold">${hin.overloadedCars} überbelegt</span>` : ""}`;
+      els.rueckSummary.innerHTML = `<span class="font-semibold">Rückfahrt:</span> <span class="${rueck.leftovers > 0 ? "text-dpsg-red font-semibold" : ""}">${rueck.leftovers} ohne Platz</span> · ${rueck.emptySeats} freie Plätze${rueck.overloadedCars > 0 ? ` · <span class="text-dpsg-red font-semibold">${rueck.overloadedCars} überbelegt</span>` : ""}`;
+
+      const sections = [["Hinfahrt", planHin], ["Rückfahrt", planRueck]];
+      els.planGrid.innerHTML = sections.map(([dir, plan]) => {
+        const carsHtml = plan.cars.map((car, carIndex) => {
+          const passengersHtml = car.passengers.length === 0
+            ? `<span class="text-sm text-dpsg-blue/50 italic">Keine Mitfahrer</span>`
+            : `<div class="flex flex-wrap gap-1">${car.passengers.map((p) => `<button type="button" class="move-passenger inline-flex items-center gap-1 text-sm bg-white border border-dpsg-beige-2 rounded px-2 py-0.5 hover:border-dpsg-cyan" data-direction="${dir}" data-key="${encodeURIComponent(participantKey(p))}" data-from="${carIndex}"><span class="w-1.5 h-1.5 rounded-full ${getGroupColorClass(p.Gruppen)}"></span>${escapeHtml(p.Vorname)} ${escapeHtml(p.Nachname)}</button>`).join("")}</div>`;
+
+          return `<div class="border border-dpsg-beige-2 rounded-lg p-3 bg-dpsg-beige-1/30"><div class="flex items-start justify-between mb-2"><div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full ${getGroupColorClass(car.driver.Gruppen)}"></span><span class="font-semibold text-dpsg-blue">${escapeHtml(car.driver.Vorname)} ${escapeHtml(car.driver.Nachname)}</span></div><span class="text-sm bg-dpsg-blue text-white px-2 py-0.5 rounded">${car.passengers.length + 1}/${car.seatsTotal}</span></div>${passengersHtml}</div>`;
+        }).join("");
+
+        const leftoversHtml = plan.leftovers.length > 0
+          ? `<div class="border-2 border-dashed border-dpsg-red/40 rounded-lg p-3 bg-dpsg-red/5"><div class="font-semibold text-dpsg-red mb-2">Ohne Platz (${plan.leftovers.length})</div><div class="flex flex-wrap gap-1">${plan.leftovers.map((p) => `<button type="button" class="move-passenger inline-flex items-center gap-1 text-sm bg-white border border-dpsg-red/30 text-dpsg-red rounded px-2 py-0.5 hover:border-dpsg-cyan" data-direction="${dir}" data-key="${encodeURIComponent(participantKey(p))}" data-from="-1"><span class="w-1.5 h-1.5 rounded-full ${getGroupColorClass(p.Gruppen)}"></span>${escapeHtml(p.Vorname)} ${escapeHtml(p.Nachname)}</button>`).join("")}</div></div>`
+          : "";
+
+        return `<div><div class="flex items-center justify-between mb-3"><h3 class="font-serif font-bold text-dpsg-blue">${dir}</h3><span class="text-sm px-2 py-0.5 rounded ${plan.leftovers.length > 0 ? "bg-dpsg-red/10 text-dpsg-red" : "bg-dpsg-pfadfinder/10 text-dpsg-pfadfinder"}">${plan.seatsAvailable} Plätze / ${plan.demand} Bedarf</span></div><div class="space-y-3">${carsHtml}${leftoversHtml}</div></div>`;
+      }).join("");
+
+      const csvBom = "\uFEFF";
+      const csvText = csvBom + [planToCsv(planHin), planToCsv(planRueck)].join("\n\n");
+      els.exportCsv.onclick = () => {
+        const safeName = (state.selectedEventName || "fahrten").replace(/[^a-zA-Z0-9äöüÄÖÜß\-_]/g, "_").substring(0, 50);
+        const blob = new Blob([csvText], { type: "text/csv;charset=utf-8;" });
+        const dl = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = dl;
+        a.download = `${safeName}_fahrten.csv`;
+        a.click();
+        URL.revokeObjectURL(dl);
       };
 
-      const storageKey = `carpool-moves:${selectedEventId || 'default'}`;
+      els.copyCsv.onclick = () => {
+        navigator.clipboard?.writeText(csvText).then(() => {
+          els.copyCsv.textContent = "Kopiert!";
+          setTimeout(() => {
+            els.copyCsv.textContent = "Kopieren";
+          }, 1500);
+        }).catch(() => {});
+      };
 
-      (function syncMovesFromLocalStorage() {
-        try {
-          const currentUrl = new URL(window.location.href);
-          const hasUrlMoves = currentUrl.searchParams.has('movesHin') || currentUrl.searchParams.has('movesRueck');
-          if (hasUrlMoves) return;
+      document.querySelectorAll(".move-passenger").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const direction = btn.dataset.direction;
+          const from = Number(btn.dataset.from);
+          const key = decodeURIComponent(btn.dataset.key);
+          const plan = direction === "Hinfahrt" ? planHin : planRueck;
+          const options = plan.cars.map((car, idx) => `${idx}: ${car.driver.Vorname} ${car.driver.Nachname} (${car.passengers.length + 1}/${car.seatsTotal})`).join("\n");
+          const input = window.prompt(`Ziel für ${btn.textContent.trim()}\n${options}\nl: Ohne Platz`, "l");
+          if (input == null) return;
+          const to = input.trim().toLowerCase() === "l" ? -1 : Number(input.trim());
+          if (to < -1 || Number.isNaN(to) || to >= plan.cars.length || to === from) return;
 
-          const raw = window.localStorage.getItem(storageKey);
-          if (!raw) return;
-          const parsed = JSON.parse(raw);
-          if (parsed?.movesHin) currentUrl.searchParams.set('movesHin', parsed.movesHin);
-          if (parsed?.movesRueck) currentUrl.searchParams.set('movesRueck', parsed.movesRueck);
-          if (parsed?.movesHin || parsed?.movesRueck) {
-            window.location.href = currentUrl.toString();
-          }
-        } catch {
-          // ignore localStorage failures
-        }
-      })();
-      
-      // Handle passenger badge clicks
-      document.querySelectorAll('.passenger-badge').forEach(badge => {
-        badge.addEventListener('click', (e) => {
-          const btn = e.currentTarget;
-          selectedPassenger = btn.dataset.participantKey;
-          selectedDirection = btn.dataset.direction;
-          selectedFromCar = parseInt(btn.dataset.fromCar, 10);
-          
-          // Get passenger name from button text
-          const name = btn.textContent.trim();
-          passengerNameEl.textContent = name;
-          
-          // Build target options
-          const cars = carsData[selectedDirection] || [];
-          let html = '';
-          
-          cars.forEach((car, idx) => {
-            if (idx === selectedFromCar) return; // Skip current car
-            const freeSeats = car.seats - car.passengers - 1;
-            const disabled = freeSeats <= 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-dpsg-cyan/10 cursor-pointer';
-            html += `
-              <button 
-                type="button"
-                class="move-target w-full text-left p-3 border border-dpsg-beige-2 rounded ${disabled}"
-                data-target-car="${idx}"
-                ${freeSeats <= 0 ? 'disabled' : ''}
-              >
-                <div class="font-semibold text-dpsg-blue">${car.driver}</div>
-                <div class="text-sm text-dpsg-blue/60">${car.passengers + 1}/${car.seats} belegt (${freeSeats} frei)</div>
-              </button>
-            `;
-          });
-          
-          // Add "Ohne Platz" option if not already there
-          if (selectedFromCar !== -1) {
-            html += `
-              <button 
-                type="button"
-                class="move-target w-full text-left p-3 border-2 border-dashed border-dpsg-red/40 rounded hover:bg-dpsg-red/10 cursor-pointer"
-                data-target-car="-1"
-              >
-                <div class="font-semibold text-dpsg-red">Ohne Platz</div>
-                <div class="text-sm text-dpsg-red/60">Zu den Übrigen verschieben</div>
-              </button>
-            `;
-          }
-          
-          moveTargetsEl.innerHTML = html;
-          
-          // Add click handlers to targets
-          document.querySelectorAll('.move-target:not([disabled])').forEach(target => {
-            target.addEventListener('click', () => {
-              const targetCar = parseInt(target.dataset.targetCar, 10);
-              applyMove(selectedPassenger, selectedFromCar, targetCar, selectedDirection);
-            });
-          });
-          
-          overlay.classList.remove('hidden');
+          const paramName = direction === "Hinfahrt" ? "movesHin" : "movesRueck";
+          const movesRaw = readMovesParam(paramName);
+          const moves = movesRaw ? movesRaw.split(",").filter(Boolean) : [];
+          const encoded = encodeURIComponent(key);
+          const filteredMoves = moves.filter((m) => !m.startsWith(`${encoded}:`));
+          filteredMoves.push(`${encoded}:${to === -1 ? "l" : String(to)}`);
+
+          const nextHin = paramName === "movesHin" ? filteredMoves.join(",") : readMovesParam("movesHin");
+          const nextRueck = paramName === "movesRueck" ? filteredMoves.join(",") : readMovesParam("movesRueck");
+          writeMoves(nextHin, nextRueck);
+          renderPlan();
         });
       });
-      
-      // Cancel button
-      if (cancelBtn) {
-        cancelBtn.addEventListener('click', () => {
-          overlay.classList.add('hidden');
-          selectedPassenger = null;
-          selectedDirection = null;
-          selectedFromCar = null;
-        });
-      }
-      
-      // Close on overlay click
-      if (overlay) {
-        overlay.addEventListener('click', (e) => {
-          if (e.target === overlay) {
-            overlay.classList.add('hidden');
-          }
-        });
-      }
-      
-      function applyMove(pKey, _fromCar, toCar, direction) {
-        const url = new URL(window.location.href);
-        const paramName = direction === 'Hinfahrt' ? 'movesHin' : 'movesRueck';
-        
-        // Get existing moves
-        let existingMoves = url.searchParams.get(paramName) || '';
-        let movesArray = existingMoves ? existingMoves.split(',') : [];
-        
-        // Remove any existing move for this participant
-        const encodedKey = encodeURIComponent(pKey);
-        movesArray = movesArray.filter(m => !m.startsWith(encodedKey + ':'));
-        
-        // Add new move
-        const target = toCar === -1 ? 'l' : toCar.toString();
-        movesArray.push(`${encodedKey}:${target}`);
-        
-        url.searchParams.set(paramName, movesArray.join(','));
+    }
 
-        try {
-          const payload = {
-            movesHin: paramName === 'movesHin' ? movesArray.join(',') : (url.searchParams.get('movesHin') ?? ''),
-            movesRueck: paramName === 'movesRueck' ? movesArray.join(',') : (url.searchParams.get('movesRueck') ?? ''),
-          };
-          window.localStorage.setItem(storageKey, JSON.stringify(payload));
-        } catch {
-          // ignore localStorage failures
-        }
+    function bindFilters() {
+      els.filterQ.value = getParam("q", "");
+      els.filterRide.value = getParam("ride", "all");
 
-        window.location.href = url.toString();
+      const apply = () => {
+        setParam("q", els.filterQ.value.trim());
+        setParam("ride", els.filterRide.value === "all" ? "" : els.filterRide.value);
+        setParam("group", els.filterGroup.value === "all" ? "" : els.filterGroup.value);
+        renderParticipants();
+      };
+
+      els.filterRide.addEventListener("change", apply);
+      els.filterGroup.addEventListener("change", apply);
+      els.filterQ.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") apply();
+      });
+      els.filterQ.addEventListener("blur", apply);
+    }
+
+    async function loadParticipants() {
+      const snapshot = await apiFetch({
+        action: "participants",
+        event: state.selectedEventId,
+        hinCol: state.columnMapping.hinfahrtColumn,
+        rueckCol: state.columnMapping.rueckfahrtColumn
+      });
+      state.participants = normalizeParticipants(snapshot.participants || []);
+    }
+
+    async function loadColumns() {
+      const data = await apiFetch({ action: "columns", event: state.selectedEventId });
+      state.columns = data.columns || [];
+    }
+
+    async function init() {
+      buildPriorityList();
+      bindFilters();
+      els.resetMoves.onclick = () => {
+        writeMoves("", "");
+        renderPlan();
+      };
+
+      try {
+        const eventsData = await apiFetch({ action: "events" });
+        state.events = eventsData.events || [];
+
+        const requestedEvent = getParam("event", "");
+        const found = state.events.find((e) => e.id === requestedEvent)
+          || state.events.find((e) => isWinterEvent(e.name) && e.name.includes("2026"))
+          || state.events.find((e) => isWinterEvent(e.name))
+          || state.events[0];
+
+        if (!found) throw new Error("Keine Events verfügbar");
+
+        state.selectedEventId = found.id;
+        state.selectedEventName = found.name;
+        setParam("event", found.id);
+
+        state.columnMapping.hinfahrtColumn = getParam("hinCol", DEFAULT_COLUMNS.hinfahrtColumn);
+        state.columnMapping.rueckfahrtColumn = getParam("rueckCol", DEFAULT_COLUMNS.rueckfahrtColumn);
+
+        await loadColumns();
+        renderEventControls();
+
+        els.event.onchange = async () => {
+          state.selectedEventId = els.event.value;
+          const evt = state.events.find((e) => e.id === state.selectedEventId);
+          state.selectedEventName = evt?.name || "";
+          setParam("event", state.selectedEventId);
+          await loadColumns();
+          renderEventControls();
+          await loadParticipants();
+          renderParticipants();
+          renderPlan();
+        };
+
+        const onColumnsChanged = async () => {
+          state.columnMapping.hinfahrtColumn = els.hinCol.value;
+          state.columnMapping.rueckfahrtColumn = els.rueckCol.value;
+          setParam("hinCol", state.columnMapping.hinfahrtColumn);
+          setParam("rueckCol", state.columnMapping.rueckfahrtColumn);
+          await loadParticipants();
+          renderParticipants();
+          renderPlan();
+        };
+
+        els.hinCol.onchange = onColumnsChanged;
+        els.rueckCol.onchange = onColumnsChanged;
+
+        await loadParticipants();
+        renderParticipants();
+        renderPlan();
+      } catch (error) {
+        els.modeDot.className = "inline-block h-2 w-2 rounded-full bg-dpsg-red";
+        els.modeLabel.textContent = "Fehler";
+        els.errorBox.classList.remove("hidden");
+        els.errorBox.textContent = error instanceof Error ? error.message : "Unbekannter Fehler";
       }
-    </script>
-  </section>
+    }
+
+    init();
+  </script>
 </BaseLayout>
