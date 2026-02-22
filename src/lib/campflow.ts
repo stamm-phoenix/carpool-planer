@@ -10,6 +10,19 @@ import type {
 
 const CAMPFLOW_BASE = "https://api.campflow.de";
 
+function parseSeatValue(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.max(0, Math.trunc(value));
+  }
+  if (typeof value === "string") {
+    const parsed = Number(value.replace(",", ".").trim());
+    if (Number.isFinite(parsed)) {
+      return Math.max(0, Math.trunc(parsed));
+    }
+  }
+  return 0;
+}
+
 // Default custom field IDs for carpool data (from Campflow event configuration)
 export const DEFAULT_COLUMN_MAPPING: ColumnMapping = {
   hinfahrtColumn: "col_K0HMI9HMkVblaqpBqFBu",
@@ -20,7 +33,7 @@ export const DEFAULT_COLUMN_MAPPING: ColumnMapping = {
  * Fetch all events from Campflow
  */
 export async function fetchCampflowEvents(token: string): Promise<CampflowEvent[]> {
-  if (!token) throw new Error("CAMPFLOW_API_KEY is required");
+  if (!token) throw new Error("CAMPFLOW_TOKEN is required");
 
   const res = await fetch(`${CAMPFLOW_BASE}/events`, {
     headers: {
@@ -55,7 +68,7 @@ export async function fetchCampflowParticipants(
   token: string,
   columnMapping: ColumnMapping = DEFAULT_COLUMN_MAPPING
 ): Promise<Participant[]> {
-  if (!token) throw new Error("CAMPFLOW_API_KEY is required");
+  if (!token) throw new Error("CAMPFLOW_TOKEN is required");
   if (!listId) throw new Error("listId is required");
 
   const allParticipants: Participant[] = [];
@@ -109,11 +122,12 @@ function mapToParticipant(
   const rueckfahrt = person[columnMapping.rueckfahrtColumn];
 
   return {
+    id: person.id,
     Vorname: person.name?.first_name ?? "",
     Nachname: person.name?.last_name ?? "",
     Gruppen: group,
-    Hinfahrt: typeof hinfahrt === "number" ? hinfahrt : 0,
-    Rückfahrt: typeof rueckfahrt === "number" ? rueckfahrt : 0,
+    Hinfahrt: parseSeatValue(hinfahrt),
+    Rückfahrt: parseSeatValue(rueckfahrt),
   };
 }
 
@@ -125,7 +139,7 @@ export async function fetchCampflowColumns(
   listId: string,
   token: string
 ): Promise<CampflowColumn[]> {
-  if (!token) throw new Error("CAMPFLOW_API_KEY is required");
+  if (!token) throw new Error("CAMPFLOW_TOKEN is required");
   if (!listId) throw new Error("listId is required");
 
   // Try dedicated columns endpoint first
@@ -149,9 +163,9 @@ export async function fetchCampflowColumns(
     // Columns endpoint not available, continue to fallback
   }
 
-  // Fallback: fetch one participant and extract column IDs that start with "col_"
+  // Fallback: fetch participants and extract likely seat columns
   try {
-    const res = await fetch(`${CAMPFLOW_BASE}/lists/${listId}/persons?per_page=1`, {
+    const res = await fetch(`${CAMPFLOW_BASE}/lists/${listId}/persons?per_page=100`, {
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
@@ -161,22 +175,24 @@ export async function fetchCampflowColumns(
     if (res.ok) {
       const json = (await res.json()) as CampflowApiResponse<CampflowApiPerson>;
       if (json.data.length > 0) {
-        const person = json.data[0];
-        const columns: CampflowColumn[] = [];
-        
-        for (const key of Object.keys(person)) {
-          if (key.startsWith("col_")) {
-            // Try to determine if it's a number field based on value
-            const value = person[key];
-            const type = typeof value === "number" ? "number" : typeof value === "string" ? "text" : "unknown";
-            columns.push({
-              id: key,
-              name: key, // We don't have human-readable names in this case
-              type,
-            });
+        const stats = new Map<string, { numeric: number; total: number }>();
+
+        for (const person of json.data) {
+          for (const [key, value] of Object.entries(person)) {
+            if (!key.startsWith("col_")) continue;
+            const prev = stats.get(key) ?? { numeric: 0, total: 0 };
+            prev.total += 1;
+            if (typeof value === "number" || value === null || value === "") {
+              prev.numeric += 1;
+            }
+            stats.set(key, prev);
           }
         }
-        
+
+        const columns = Array.from(stats.entries())
+          .filter(([, s]) => s.total > 0 && s.numeric / s.total >= 0.8)
+          .map(([id]) => ({ id, name: id, type: "number" }));
+
         return columns;
       }
     }

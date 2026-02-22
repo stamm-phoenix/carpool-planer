@@ -4,7 +4,7 @@ import { fetchCampflowEvents, fetchCampflowParticipants, fetchCampflowColumns, D
 import { computePlan, groupPriorityOrder, planToCsv, parseMovesFromUrl, applyManualMoves, participantKey as getParticipantKey } from "../lib/planner";
 import type { CampflowEvent, Participant, CampflowColumn, ColumnMapping } from "../lib/types";
 
-const token = import.meta.env.CAMPFLOW_API_KEY ?? "";
+const token = import.meta.env.CAMPFLOW_TOKEN ?? "";
 
 // Get URL parameters
 const url = Astro.url;
@@ -13,6 +13,9 @@ const requestedHinCol = url.searchParams.get("hinCol");
 const requestedRueckCol = url.searchParams.get("rueckCol");
 const movesHinParam = url.searchParams.get("movesHin") ?? "";
 const movesRueckParam = url.searchParams.get("movesRueck") ?? "";
+const searchParam = url.searchParams.get("q")?.trim() ?? "";
+const rideFilterParam = url.searchParams.get("ride") ?? "all";
+const groupFilterParam = url.searchParams.get("group") ?? "all";
 
 const sampleEvents: CampflowEvent[] = [
   { id: "sample-1", name: "Demo Event (kein API Key)", startDate: "2026-01-01" },
@@ -38,6 +41,23 @@ let selectedEventId = "";
 let selectedEventName = "";
 let errorMessage = "";
 
+function isWinterEvent(name: string): boolean {
+  return /winter\s*[-_ ]?\s*wochenende/i.test(name);
+}
+
+function normalizeParticipants(input: Participant[]): Participant[] {
+  return input
+    .filter((p) => `${p.Vorname ?? ""}${p.Nachname ?? ""}`.trim().length > 0)
+    .map((p) => ({
+      ...p,
+      Vorname: (p.Vorname ?? "").trim(),
+      Nachname: (p.Nachname ?? "").trim(),
+      Gruppen: (p.Gruppen ?? "").trim(),
+      Hinfahrt: Number.isFinite(p.Hinfahrt) ? Math.max(0, Math.trunc(p.Hinfahrt)) : 0,
+      Rückfahrt: Number.isFinite(p.Rückfahrt) ? Math.max(0, Math.trunc(p.Rückfahrt)) : 0,
+    }));
+}
+
 // Column mapping - use URL params or defaults
 let columnMapping: ColumnMapping = {
   hinfahrtColumn: requestedHinCol || DEFAULT_COLUMN_MAPPING.hinfahrtColumn,
@@ -57,10 +77,9 @@ if (token) {
     }
     
     if (!selectedEvent) {
-      selectedEvent = events.find((e) => 
-        e.name.toLowerCase().includes("winter-wochenende") && 
-        e.name.includes("2026")
-      ) ?? events[0];
+      selectedEvent = events.find((e) => isWinterEvent(e.name) && e.name.includes("2026"))
+        ?? events.find((e) => isWinterEvent(e.name))
+        ?? events[0];
     }
     
     selectedEventId = selectedEvent?.id ?? "";
@@ -78,6 +97,7 @@ if (token) {
       // Fetch participants with the column mapping
       participants = await fetchCampflowParticipants(selectedEventId, token, columnMapping);
     }
+    participants = normalizeParticipants(participants);
     modeLabel = "Campflow";
   } catch (err) {
     console.warn("Campflow fetch failed, fallback to demo data", err);
@@ -88,6 +108,25 @@ if (token) {
   }
 }
 
+participants = normalizeParticipants(participants);
+
+const groupOptions = Array.from(new Set(participants.map((p) => p.Gruppen).filter(Boolean))).sort((a, b) => a.localeCompare(b, "de"));
+
+const filteredParticipants = participants.filter((p) => {
+  const fullName = `${p.Vorname} ${p.Nachname}`.toLowerCase();
+  const group = p.Gruppen.toLowerCase();
+  const matchesSearch = !searchParam || fullName.includes(searchParam.toLowerCase()) || group.includes(searchParam.toLowerCase());
+  const matchesGroup = groupFilterParam === "all" || p.Gruppen === groupFilterParam;
+  const matchesRide =
+    rideFilterParam === "all"
+    || (rideFilterParam === "drivers" && (p.Hinfahrt > 0 || p.Rückfahrt > 0))
+    || (rideFilterParam === "passengers" && p.Hinfahrt === 0 && p.Rückfahrt === 0)
+    || (rideFilterParam === "hin" && p.Hinfahrt > 0)
+    || (rideFilterParam === "rueck" && p.Rückfahrt > 0);
+
+  return matchesSearch && matchesGroup && matchesRide;
+});
+
 const basePlanHin = computePlan(participants, "Hinfahrt");
 const basePlanRueck = computePlan(participants, "Rückfahrt");
 
@@ -97,6 +136,19 @@ const movesRueck = parseMovesFromUrl(movesRueckParam, basePlanRueck);
 
 const planHin = movesHin.length > 0 ? applyManualMoves(basePlanHin, movesHin) : basePlanHin;
 const planRueck = movesRueck.length > 0 ? applyManualMoves(basePlanRueck, movesRueck) : basePlanRueck;
+
+function getCapacitySummary(plan: typeof planHin) {
+  const emptySeats = plan.cars.reduce((sum, car) => sum + Math.max(0, car.seatsTotal - 1 - car.passengers.length), 0);
+  const overloadedCars = plan.cars.filter((car) => car.passengers.length > car.passengerCapacity).length;
+  return {
+    emptySeats,
+    overloadedCars,
+    leftovers: plan.leftovers.length,
+  };
+}
+
+const hinSummary = getCapacitySummary(planHin);
+const rueckSummary = getCapacitySummary(planRueck);
 
 // CSV with BOM for Excel compatibility
 const csvBom = "\uFEFF";
@@ -137,7 +189,7 @@ function getShortGroupName(group: string): string {
     <!-- Status Badge -->
     <div class="mt-3 inline-flex items-center gap-2 text-sm bg-white border border-dpsg-beige-2 rounded px-3 py-1.5">
       <span class={`inline-block h-2 w-2 rounded-full ${token ? 'bg-dpsg-pfadfinder' : 'bg-dpsg-yellow'}`}></span>
-      <span class="text-dpsg-blue">{modeLabel} · {participants.length} Teilnehmer</span>
+      <span class="text-dpsg-blue">{modeLabel} · {participants.length} Teilnehmer ({filteredParticipants.length} gefiltert)</span>
     </div>
   </div>
 
@@ -311,6 +363,35 @@ function getShortGroupName(group: string): string {
     <section class="lg:col-span-2 bg-white rounded-lg border border-dpsg-beige-2 p-5 shadow-sm">
       <h2 class="font-serif text-lg font-bold text-dpsg-blue mb-1">Teilnehmer</h2>
       <p class="text-sm text-dpsg-blue/60 mb-4">Fahrer haben Plätze &gt; 0 eingetragen</p>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+        <input
+          id="filter-q"
+          type="search"
+          placeholder="Name oder Gruppe suchen"
+          value={searchParam}
+          class="rounded border border-dpsg-beige-2 bg-white px-3 py-2 text-sm text-dpsg-blue focus:border-dpsg-cyan focus:outline-none focus:ring-1 focus:ring-dpsg-cyan"
+        />
+        <select
+          id="filter-ride"
+          class="rounded border border-dpsg-beige-2 bg-white px-3 py-2 text-sm text-dpsg-blue focus:border-dpsg-cyan focus:outline-none focus:ring-1 focus:ring-dpsg-cyan"
+        >
+          <option value="all" selected={rideFilterParam === "all"}>Alle</option>
+          <option value="drivers" selected={rideFilterParam === "drivers"}>Nur Fahrer</option>
+          <option value="passengers" selected={rideFilterParam === "passengers"}>Nur Mitfahrende</option>
+          <option value="hin" selected={rideFilterParam === "hin"}>Fahrer Hinfahrt</option>
+          <option value="rueck" selected={rideFilterParam === "rueck"}>Fahrer Rückfahrt</option>
+        </select>
+        <select
+          id="filter-group"
+          class="rounded border border-dpsg-beige-2 bg-white px-3 py-2 text-sm text-dpsg-blue focus:border-dpsg-cyan focus:outline-none focus:ring-1 focus:ring-dpsg-cyan"
+        >
+          <option value="all" selected={groupFilterParam === "all"}>Alle Gruppen</option>
+          {groupOptions.map((group) => (
+            <option value={group} selected={groupFilterParam === group}>{group}</option>
+          ))}
+        </select>
+      </div>
       
       <div class="overflow-auto max-h-80 border border-dpsg-beige-2 rounded">
         <table class="w-full text-sm">
@@ -323,7 +404,7 @@ function getShortGroupName(group: string): string {
             </tr>
           </thead>
           <tbody class="divide-y divide-dpsg-beige-2">
-            {participants.map((p) => (
+            {filteredParticipants.map((p) => (
               <tr class="hover:bg-dpsg-beige-1/50">
                 <td class="px-3 py-2 text-dpsg-blue">{p.Vorname} {p.Nachname}</td>
                 <td class="px-3 py-2">
@@ -339,6 +420,11 @@ function getShortGroupName(group: string): string {
                 </td>
               </tr>
             ))}
+            {filteredParticipants.length === 0 && (
+              <tr>
+                <td colspan="4" class="px-3 py-6 text-center text-dpsg-blue/60">Keine Teilnehmer für diesen Filter</td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -346,6 +432,42 @@ function getShortGroupName(group: string): string {
       <p class="text-xs text-dpsg-blue/50 mt-2">
         Datenquelle: {token ? "Campflow API" : "Demo-Daten"}
       </p>
+
+      <script>
+        const qInput = document.getElementById('filter-q') as HTMLInputElement | null;
+        const rideSelect = document.getElementById('filter-ride') as HTMLSelectElement | null;
+        const groupSelect = document.getElementById('filter-group') as HTMLSelectElement | null;
+
+        function applyFilters() {
+          const nextUrl = new URL(window.location.href);
+          const q = qInput?.value.trim() ?? '';
+          const ride = rideSelect?.value ?? 'all';
+          const group = groupSelect?.value ?? 'all';
+
+          if (q) nextUrl.searchParams.set('q', q);
+          else nextUrl.searchParams.delete('q');
+
+          if (ride !== 'all') nextUrl.searchParams.set('ride', ride);
+          else nextUrl.searchParams.delete('ride');
+
+          if (group !== 'all') nextUrl.searchParams.set('group', group);
+          else nextUrl.searchParams.delete('group');
+
+          window.location.href = nextUrl.toString();
+        }
+
+        if (rideSelect) rideSelect.addEventListener('change', applyFilters);
+        if (groupSelect) groupSelect.addEventListener('change', applyFilters);
+        if (qInput) {
+          qInput.addEventListener('keydown', (event) => {
+            if ((event as KeyboardEvent).key === 'Enter') applyFilters();
+          });
+          qInput.addEventListener('blur', () => {
+            const current = new URL(window.location.href).searchParams.get('q') ?? '';
+            if ((qInput.value ?? '').trim() !== current) applyFilters();
+          });
+        }
+      </script>
     </section>
 
     <!-- Priority Sidebar -->
@@ -435,11 +557,31 @@ function getShortGroupName(group: string): string {
         )}
       </div>
     </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
+      <div class="rounded border border-dpsg-beige-2 bg-dpsg-beige-1/40 px-3 py-2 text-sm text-dpsg-blue">
+        <span class="font-semibold">Hinfahrt:</span>
+        <span class={hinSummary.leftovers > 0 ? 'text-dpsg-red font-semibold ml-2' : 'ml-2'}>{hinSummary.leftovers} ohne Platz</span>
+        <span class="ml-2">· {hinSummary.emptySeats} freie Plätze</span>
+        {hinSummary.overloadedCars > 0 && (
+          <span class="ml-2 text-dpsg-red font-semibold">· {hinSummary.overloadedCars} überbelegt</span>
+        )}
+      </div>
+      <div class="rounded border border-dpsg-beige-2 bg-dpsg-beige-1/40 px-3 py-2 text-sm text-dpsg-blue">
+        <span class="font-semibold">Rückfahrt:</span>
+        <span class={rueckSummary.leftovers > 0 ? 'text-dpsg-red font-semibold ml-2' : 'ml-2'}>{rueckSummary.leftovers} ohne Platz</span>
+        <span class="ml-2">· {rueckSummary.emptySeats} freie Plätze</span>
+        {rueckSummary.overloadedCars > 0 && (
+          <span class="ml-2 text-dpsg-red font-semibold">· {rueckSummary.overloadedCars} überbelegt</span>
+        )}
+      </div>
+    </div>
     
-    <script is:inline define:vars={{ csvExportText, selectedEventName }}>
+    <script is:inline define:vars={{ csvExportText, selectedEventName, selectedEventId }}>
       const csvText = csvExportText;
       const eventName = selectedEventName || 'fahrten';
       const safeFileName = eventName.replace(/[^a-zA-Z0-9äöüÄÖÜß\-_]/g, '_').substring(0, 50);
+      const exportStorageKey = `carpool-moves:${selectedEventId || 'default'}`;
       
       const exportBtn = document.getElementById('export-csv');
       const copyBtn = document.getElementById('copy-csv');
@@ -469,6 +611,11 @@ function getShortGroupName(group: string): string {
       
       if (resetBtn) {
         resetBtn.addEventListener('click', () => {
+          try {
+            window.localStorage.removeItem(exportStorageKey);
+          } catch {
+            // ignore localStorage failures
+          }
           const url = new URL(window.location.href);
           url.searchParams.delete('movesHin');
           url.searchParams.delete('movesRueck');
@@ -647,7 +794,7 @@ function getShortGroupName(group: string): string {
       </div>
     </div>
     
-    <script is:inline define:vars={{ planHinCars: planHin.cars.map((c, i) => ({ index: i, driver: `${c.driver.Vorname} ${c.driver.Nachname}`, seats: c.seatsTotal, passengers: c.passengers.length })), planRueckCars: planRueck.cars.map((c, i) => ({ index: i, driver: `${c.driver.Vorname} ${c.driver.Nachname}`, seats: c.seatsTotal, passengers: c.passengers.length })) }}>
+    <script is:inline define:vars={{ planHinCars: planHin.cars.map((c, i) => ({ index: i, driver: `${c.driver.Vorname} ${c.driver.Nachname}`, seats: c.seatsTotal, passengers: c.passengers.length })), planRueckCars: planRueck.cars.map((c, i) => ({ index: i, driver: `${c.driver.Vorname} ${c.driver.Nachname}`, seats: c.seatsTotal, passengers: c.passengers.length })), selectedEventId }}>
       // Passenger move functionality
       const overlay = document.getElementById('move-overlay');
       const passengerNameEl = document.getElementById('move-passenger-name');
@@ -662,6 +809,27 @@ function getShortGroupName(group: string): string {
         'Hinfahrt': planHinCars,
         'Rückfahrt': planRueckCars
       };
+
+      const storageKey = `carpool-moves:${selectedEventId || 'default'}`;
+
+      (function syncMovesFromLocalStorage() {
+        try {
+          const currentUrl = new URL(window.location.href);
+          const hasUrlMoves = currentUrl.searchParams.has('movesHin') || currentUrl.searchParams.has('movesRueck');
+          if (hasUrlMoves) return;
+
+          const raw = window.localStorage.getItem(storageKey);
+          if (!raw) return;
+          const parsed = JSON.parse(raw);
+          if (parsed?.movesHin) currentUrl.searchParams.set('movesHin', parsed.movesHin);
+          if (parsed?.movesRueck) currentUrl.searchParams.set('movesRueck', parsed.movesRueck);
+          if (parsed?.movesHin || parsed?.movesRueck) {
+            window.location.href = currentUrl.toString();
+          }
+        } catch {
+          // ignore localStorage failures
+        }
+      })();
       
       // Handle passenger badge clicks
       document.querySelectorAll('.passenger-badge').forEach(badge => {
@@ -752,13 +920,25 @@ function getShortGroupName(group: string): string {
         let movesArray = existingMoves ? existingMoves.split(',') : [];
         
         // Remove any existing move for this participant
-        movesArray = movesArray.filter(m => !m.startsWith(pKey + ':'));
+        const encodedKey = encodeURIComponent(pKey);
+        movesArray = movesArray.filter(m => !m.startsWith(encodedKey + ':'));
         
         // Add new move
         const target = toCar === -1 ? 'l' : toCar.toString();
-        movesArray.push(`${pKey}:${target}`);
+        movesArray.push(`${encodedKey}:${target}`);
         
         url.searchParams.set(paramName, movesArray.join(','));
+
+        try {
+          const payload = {
+            movesHin: paramName === 'movesHin' ? movesArray.join(',') : (url.searchParams.get('movesHin') ?? ''),
+            movesRueck: paramName === 'movesRueck' ? movesArray.join(',') : (url.searchParams.get('movesRueck') ?? ''),
+          };
+          window.localStorage.setItem(storageKey, JSON.stringify(payload));
+        } catch {
+          // ignore localStorage failures
+        }
+
         window.location.href = url.toString();
       }
     </script>

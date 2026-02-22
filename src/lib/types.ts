@@ -1,4 +1,5 @@
 export interface Participant {
+  id?: string;
   Vorname: string;
   Nachname: string;
   Gruppen: string;

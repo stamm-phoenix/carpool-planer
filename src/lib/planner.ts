@@ -84,6 +84,7 @@ function isSameTier(a: Participant, b: Participant): boolean {
  * Create a unique key for a participant (for deduplication)
  */
 export function participantKey(p: Participant): string {
+  if (p.id) return p.id;
   return `${p.Vorname}|${p.Nachname}|${p.Gruppen}`;
 }
 
@@ -360,7 +361,8 @@ export function parseMovesFromUrl(movesStr: string, plan: PlanResult): ManualMov
   
   for (const part of parts) {
     // Format: "key:targetCarIndex" where key is participantKey and target is car index or -1 for leftovers
-    const [pKey, target] = part.split(":");
+    const [encodedKey, target] = part.split(":");
+    const pKey = encodedKey ? decodeURIComponent(encodedKey) : "";
     if (!pKey || !target) continue;
     
     const location = locationMap.get(pKey);
@@ -383,7 +385,17 @@ export function parseMovesFromUrl(movesStr: string, plan: PlanResult): ManualMov
  * Serialize moves to URL format
  */
 export function serializeMovesToUrl(moves: ManualMove[]): string {
-  return moves.map(m => `${m.participantKey}:${m.toCarIndex === -1 ? "l" : m.toCarIndex}`).join(",");
+  return moves
+    .map((m) => `${encodeURIComponent(m.participantKey)}:${m.toCarIndex === -1 ? "l" : m.toCarIndex}`)
+    .join(",");
+}
+
+function csvEscape(value: string | number): string {
+  const str = String(value ?? "");
+  if (str.includes('"') || str.includes(",") || str.includes("\n")) {
+    return `"${str.replaceAll('"', '""')}"`;
+  }
+  return str;
 }
 
 export function planToCsv(plan: PlanResult): string {
@@ -391,11 +403,11 @@ export function planToCsv(plan: PlanResult): string {
   const rows = plan.cars.map((car) => {
     const name = `${car.driver.Vorname} ${car.driver.Nachname}`.trim();
     const passengers = car.passengers.map((p) => `${p.Vorname} ${p.Nachname}`.trim()).join(" | ");
-    return [plan.direction, name, car.seatsTotal, passengers].join(",");
+    return [csvEscape(plan.direction), csvEscape(name), csvEscape(car.seatsTotal), csvEscape(passengers)].join(",");
   });
   if (plan.leftovers.length) {
     const rest = plan.leftovers.map((p) => `${p.Vorname} ${p.Nachname}`).join(" | ");
-    rows.push([plan.direction, "OHNE PLATZ", 0, rest].join(","));
+    rows.push([csvEscape(plan.direction), csvEscape("OHNE PLATZ"), csvEscape(0), csvEscape(rest)].join(","));
   }
   return [header, ...rows].join("\n");
 }
