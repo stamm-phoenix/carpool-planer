@@ -168,10 +168,10 @@ export interface PlanResult {
  * Key rules:
  * 1. If someone has seats > 0, they are a DRIVER (never a passenger)
  * 2. ALL Leiter drivers always drive (their cars are filled first)
- * 3. Non-Leiter drivers are added as needed to transport remaining passengers
+ * 3. Non-Leiter drivers are always shown as drivers
  * 4. Fill cars completely before adding new drivers (big cars first)
  * 5. No person appears twice (driver can't be passenger)
- * 6. If there are leftover passengers, ALL available drivers should be used
+ * 6. Every participant is visible in the plan as either driver, passenger or leftover
  */
 export function computePlan(participants: Participant[], direction: Direction): PlanResult {
   const seatKey = direction === "Hinfahrt" ? "Hinfahrt" : "Rückfahrt";
@@ -243,28 +243,10 @@ export function computePlan(participants: Participant[], direction: Direction): 
   }
   
   // ============================================
-  // PHASE 2: Add non-Leiter drivers to transport remaining passengers
+  // PHASE 2: Non-Leiter drivers are always listed as drivers
   // ============================================
-  
   for (const { participant: driver, seats } of nonLeiterDrivers) {
-    // Skip drivers with 0 passenger capacity who have no one to transport
-    // But if there are still passengers, we MUST add drivers
     const passengerCapacity = Math.max(seats - 1, 0);
-    
-    // Only skip this driver if:
-    // 1. No passengers need rides AND
-    // 2. This driver can't take anyone anyway (capacity 0)
-    if (remainingPassengers.length === 0 && passengerCapacity === 0) {
-      continue;
-    }
-    
-    // If there are still passengers needing rides, add this driver
-    // (even if they end up with fewer passengers than capacity)
-    if (remainingPassengers.length === 0) {
-      // No more passengers - we can stop adding drivers
-      break;
-    }
-    
     const passengers: Participant[] = [];
     
     // Fill with available passengers, preferring same tier
@@ -309,6 +291,26 @@ export function computePlan(participants: Participant[], direction: Direction): 
   
   const demand = leiterPassengers.length + nonLeiterPassengers.length;
   const seatsAvailable = cars.reduce((sum, car) => sum + car.passengerCapacity, 0);
+
+  const assignedPassengerKeys = new Set<string>();
+  for (const car of cars) {
+    for (const p of car.passengers) {
+      assignedPassengerKeys.add(participantKey(p));
+    }
+  }
+
+  const accountedParticipants = new Set<string>([
+    ...Array.from(driverKeys),
+    ...Array.from(assignedPassengerKeys),
+    ...leftovers.map((p) => participantKey(p)),
+  ]);
+
+  for (const p of participants) {
+    const key = participantKey(p);
+    if (!accountedParticipants.has(key)) {
+      console.error(`BUG: Participant ${p.Vorname} ${p.Nachname} is not represented in the plan.`);
+    }
+  }
   
   return {
     direction,
