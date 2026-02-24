@@ -26,7 +26,6 @@
     "Referrer-Policy": "strict-origin-when-cross-origin"
   },
   "auth": {
-    "rolesSource": "/api/none",
     "identityProviders": {
       "azureActiveDirectory": {
         "registration": {
@@ -40,9 +39,7 @@
   "routes": [
     {
       "route": "/*",
-      "allowedRoles": [
-        "authenticated"
-      ]
+      "allowedRoles": ["authenticated"]
     }
   ]
 }
