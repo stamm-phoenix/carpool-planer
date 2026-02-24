@@ -1,1 +1,48 @@
-{"navigationFallback":{"rewrite":"/index.html","exclude":["/api/*","/_astro/*","/assets/*","/*.css","/*.js","/*.json","/*.svg","/*.png","/*.jpg","/*.ico"]},"responseOverrides":{"404":{"rewrite":"/index.html","statusCode":200}},"globalHeaders":{"X-Content-Type-Options":"nosniff","X-Frame-Options":"DENY","Referrer-Policy":"strict-origin-when-cross-origin"},"auth":{"rolesSource":"/api/none","identityProviders":{"azureActiveDirectory":{"registration":{"openIdIssuer":"https://login.microsoftonline.com/0e650e3e-3da0-4a47-bf6c-df3dd3980caa","clientIdSettingName":"AZURE_CLIENT_ID","clientSecretSettingName":"AZURE_CLIENT_SECRET_APP_SETTING_NAME"}}}}}
+{
+  "navigationFallback": {
+    "rewrite": "/index.html",
+    "exclude": [
+      "/api/*",
+      "/_astro/*",
+      "/assets/*",
+      "/*.css",
+      "/*.js",
+      "/*.json",
+      "/*.svg",
+      "/*.png",
+      "/*.jpg",
+      "/*.ico"
+    ]
+  },
+  "responseOverrides": {
+    "404": {
+      "rewrite": "/index.html",
+      "statusCode": 200
+    }
+  },
+  "globalHeaders": {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "strict-origin-when-cross-origin"
+  },
+  "auth": {
+    "rolesSource": "/api/none",
+    "identityProviders": {
+      "azureActiveDirectory": {
+        "registration": {
+          "openIdIssuer": "https://login.microsoftonline.com/0e650e3e-3da0-4a47-bf6c-df3dd3980caa",
+          "clientIdSettingName": "AZURE_CLIENT_ID",
+          "clientSecretSettingName": "AZURE_CLIENT_SECRET_APP_SETTING_NAME"
+        }
+      }
+    }
+  },
+  "routes": [
+    {
+      "route": "/*",
+      "allowedRoles": [
+        "authenticated"
+      ]
+    }
+  ]
+}
