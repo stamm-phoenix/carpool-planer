@@ -199,12 +199,20 @@ function sortDriverCandidates(a: DriverCandidate, b: DriverCandidate): number {
  * 2. Driver selection prefers larger cars first, then group priority.
  * 3. Every participant appears in exactly one place: driver, passenger, or unassigned.
  */
-export function computePlan(participants: Participant[], direction: Direction): PlanResult {
+export function computePlan(
+  participants: Participant[],
+  direction: Direction,
+  forcedDriverKeys: Iterable<string> = [],
+  excludedParticipantKeys: Iterable<string> = [],
+): PlanResult {
   const seatKey = direction === "Hinfahrt" ? "Hinfahrt" : "Rückfahrt";
+  const forcedKeys = new Set(forcedDriverKeys);
+  const excludedKeys = new Set(excludedParticipantKeys);
+  const activeParticipants = participants.filter((participant) => !excludedKeys.has(participantKey(participant)));
 
   const driverCandidates: DriverCandidate[] = [];
 
-  for (const p of participants) {
+  for (const p of activeParticipants) {
     const seats = p[seatKey] as number;
     if (seats > 0) {
       driverCandidates.push({
@@ -217,16 +225,30 @@ export function computePlan(participants: Participant[], direction: Direction): 
 
   driverCandidates.sort(sortDriverCandidates);
 
+  const forcedCandidates = driverCandidates.filter((candidate) =>
+    forcedKeys.has(participantKey(candidate.participant)),
+  );
+  const optionalCandidates = driverCandidates.filter(
+    (candidate) => !forcedKeys.has(participantKey(candidate.participant)),
+  );
+
   const selectedDrivers: DriverCandidate[] = [];
   let selectedSeatTotal = 0;
-  for (const candidate of driverCandidates) {
-    if (selectedSeatTotal >= participants.length) break;
+  for (const candidate of forcedCandidates) {
+    selectedDrivers.push(candidate);
+    selectedSeatTotal += candidate.seats;
+  }
+
+  for (const candidate of optionalCandidates) {
+    if (selectedSeatTotal >= activeParticipants.length) break;
     selectedDrivers.push(candidate);
     selectedSeatTotal += candidate.seats;
   }
 
   const selectedDriverKeys = new Set(selectedDrivers.map((candidate) => participantKey(candidate.participant)));
-  const remainingPassengers = participants.filter((participant) => !selectedDriverKeys.has(participantKey(participant)));
+  const remainingPassengers = activeParticipants.filter(
+    (participant) => !selectedDriverKeys.has(participantKey(participant)),
+  );
 
   const cars: CarAssignment[] = [];
   for (const { participant: driver, seats, passengerCapacity } of selectedDrivers) {
@@ -248,7 +270,7 @@ export function computePlan(participants: Participant[], direction: Direction): 
   rebalanceSparseCars(cars);
 
   const unassignedPassengers = [...remainingPassengers];
-  const demand = participants.length - selectedDrivers.length;
+  const demand = activeParticipants.length - selectedDrivers.length;
   const seatsAvailable = cars.reduce((sum, car) => sum + car.passengerCapacity, 0);
 
   const representedKeys = new Set<string>();
@@ -262,7 +284,7 @@ export function computePlan(participants: Participant[], direction: Direction): 
     representedKeys.add(participantKey(p));
   }
 
-  for (const p of participants) {
+  for (const p of activeParticipants) {
     if (!representedKeys.has(participantKey(p))) {
       console.error(`BUG: Participant ${p.Vorname} ${p.Nachname} is not represented in the plan.`);
     }

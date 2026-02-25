@@ -242,13 +242,109 @@ import BaseLayout from "../layouts/BaseLayout.astro";
       }
     }
 
-    function writeMoves(hin, rueck) {
-      setParam("movesHin", hin);
-      setParam("movesRueck", rueck);
+    function writePlannerState({ movesHin, movesRueck, forceHin, forceRueck, removeHin, removeRueck }) {
+      setParam("movesHin", movesHin);
+      setParam("movesRueck", movesRueck);
+      setParam("forceHin", forceHin);
+      setParam("forceRueck", forceRueck);
+      setParam("removeHin", removeHin);
+      setParam("removeRueck", removeRueck);
       try {
-        window.localStorage.setItem(getStorageKey(), JSON.stringify({ movesHin: hin, movesRueck: rueck }));
+        window.localStorage.setItem(
+          getStorageKey(),
+          JSON.stringify({ movesHin, movesRueck, forceHin, forceRueck, removeHin, removeRueck }),
+        );
       } catch {
       }
+    }
+
+    function writeMoves(hin, rueck) {
+      writePlannerState({
+        movesHin: hin,
+        movesRueck: rueck,
+        forceHin: readMovesParam("forceHin"),
+        forceRueck: readMovesParam("forceRueck"),
+        removeHin: readMovesParam("removeHin"),
+        removeRueck: readMovesParam("removeRueck")
+      });
+    }
+
+    function parseKeyList(value) {
+      if (!value) return [];
+      return value
+        .split(",")
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .map((part) => {
+          try {
+            return decodeURIComponent(part);
+          } catch {
+            return "";
+          }
+        })
+        .filter(Boolean);
+    }
+
+    function serializeKeyList(keys) {
+      return Array.from(new Set(keys)).map((key) => encodeURIComponent(key)).join(",");
+    }
+
+    function findParticipantByKey(key) {
+      return state.participants.find((p) => participantKey(p) === key);
+    }
+
+    function promotePassenger(direction, key) {
+      const participant = findParticipantByKey(key);
+      if (!participant) return;
+
+      const seatKey = direction === "Hinfahrt" ? "Hinfahrt" : "Rückfahrt";
+      if ((participant[seatKey] || 0) <= 0) return;
+
+      const paramName = direction === "Hinfahrt" ? "forceHin" : "forceRueck";
+      const current = parseKeyList(readMovesParam(paramName));
+      const next = serializeKeyList([...current, key]);
+
+      writePlannerState({
+        movesHin: readMovesParam("movesHin"),
+        movesRueck: readMovesParam("movesRueck"),
+        forceHin: paramName === "forceHin" ? next : readMovesParam("forceHin"),
+        forceRueck: paramName === "forceRueck" ? next : readMovesParam("forceRueck"),
+        removeHin: readMovesParam("removeHin"),
+        removeRueck: readMovesParam("removeRueck")
+      });
+
+      closeMoveModal();
+      renderPlan();
+    }
+
+    function removeParticipant(direction, key) {
+      const removeParam = direction === "Hinfahrt" ? "removeHin" : "removeRueck";
+      const forceParam = direction === "Hinfahrt" ? "forceHin" : "forceRueck";
+
+      const nextRemove = serializeKeyList([...parseKeyList(readMovesParam(removeParam)), key]);
+      const nextForce = serializeKeyList(parseKeyList(readMovesParam(forceParam)).filter((k) => k !== key));
+
+      const sanitizeMoves = (movesRaw) => {
+        if (!movesRaw) return "";
+        const encoded = encodeURIComponent(key);
+        return movesRaw
+          .split(",")
+          .filter(Boolean)
+          .filter((entry) => !entry.startsWith(`${encoded}:`))
+          .join(",");
+      };
+
+      writePlannerState({
+        movesHin: direction === "Hinfahrt" ? sanitizeMoves(readMovesParam("movesHin")) : readMovesParam("movesHin"),
+        movesRueck: direction === "Rückfahrt" ? sanitizeMoves(readMovesParam("movesRueck")) : readMovesParam("movesRueck"),
+        forceHin: direction === "Hinfahrt" ? nextForce : readMovesParam("forceHin"),
+        forceRueck: direction === "Rückfahrt" ? nextForce : readMovesParam("forceRueck"),
+        removeHin: direction === "Hinfahrt" ? nextRemove : readMovesParam("removeHin"),
+        removeRueck: direction === "Rückfahrt" ? nextRemove : readMovesParam("removeRueck")
+      });
+
+      closeMoveModal();
+      renderPlan();
     }
 
     function normalizeParticipants(rows) {
@@ -385,10 +481,15 @@ import BaseLayout from "../layouts/BaseLayout.astro";
       els.moveModalTitle.textContent = "";
     }
 
-    function openMoveModal(direction, from, key, label, plan) {
+    function openMoveModal(direction, from, key, label, plan, isDriver = false) {
       state.moveSelection = { direction, from, key };
       els.moveModalTitle.textContent = `${label} (${direction})`;
-      const carButtons = plan.cars
+      const participant = findParticipantByKey(key);
+      const seatKey = direction === "Hinfahrt" ? "Hinfahrt" : "Rückfahrt";
+      const ownSeats = participant ? Number(participant[seatKey] || 0) : 0;
+      const carButtons = isDriver
+        ? ""
+        : plan.cars
         .map((car, idx) => ({
           idx,
           label: `${car.driver.Vorname} ${car.driver.Nachname} (${car.passengers.length + 1}/${car.seatsTotal})`
@@ -396,10 +497,14 @@ import BaseLayout from "../layouts/BaseLayout.astro";
         .filter((entry) => entry.idx !== from)
         .map((entry) => `<button type="button" class="rounded border border-dpsg-beige-2 px-3 py-2 text-left text-sm text-dpsg-blue hover:border-dpsg-cyan" data-target="${entry.idx}">${escapeHtml(entry.label)}</button>`)
         .join("");
-      const leftoverButton = from === -1
+      const leftoverButton = isDriver || from === -1
         ? ""
         : `<button type="button" class="rounded border border-dpsg-red/40 px-3 py-2 text-left text-sm text-dpsg-red hover:border-dpsg-red" data-target="-1">Elternfahrt/ohne Platz</button>`;
-      els.moveModalOptions.innerHTML = `${carButtons}${leftoverButton}`;
+      const promoteButton = !isDriver && ownSeats > 0
+        ? `<button type="button" class="rounded border border-dpsg-pfadfinder/40 bg-dpsg-pfadfinder/5 px-3 py-2 text-left text-sm text-dpsg-pfadfinder hover:border-dpsg-pfadfinder" data-action="promote">Als Fahrer festlegen (${ownSeats} Plätze)</button>`
+        : "";
+      const removeButton = `<button type="button" class="rounded border border-dpsg-red/40 bg-dpsg-red/5 px-3 py-2 text-left text-sm text-dpsg-red hover:border-dpsg-red" data-action="remove">Aus Planung entfernen</button>`;
+      els.moveModalOptions.innerHTML = `${promoteButton}${carButtons}${leftoverButton}${removeButton}`;
       els.moveModal.classList.remove("hidden");
       els.moveModalOptions.querySelectorAll("button[data-target]").forEach((button) => {
         button.addEventListener("click", () => {
@@ -408,11 +513,27 @@ import BaseLayout from "../layouts/BaseLayout.astro";
           applyMove(direction, from, key, target);
         });
       });
+      const promoteEl = els.moveModalOptions.querySelector("button[data-action='promote']");
+      if (promoteEl) {
+        promoteEl.addEventListener("click", () => {
+          promotePassenger(direction, key);
+        });
+      }
+      const removeEl = els.moveModalOptions.querySelector("button[data-action='remove']");
+      if (removeEl) {
+        removeEl.addEventListener("click", () => {
+          removeParticipant(direction, key);
+        });
+      }
     }
 
     function renderPlan() {
-      const baseHin = computePlan(state.participants, "Hinfahrt");
-      const baseRueck = computePlan(state.participants, "Rückfahrt");
+      const forcedHin = new Set(parseKeyList(readMovesParam("forceHin")));
+      const forcedRueck = new Set(parseKeyList(readMovesParam("forceRueck")));
+      const removedHin = new Set(parseKeyList(readMovesParam("removeHin")));
+      const removedRueck = new Set(parseKeyList(readMovesParam("removeRueck")));
+      const baseHin = computePlan(state.participants, "Hinfahrt", forcedHin, removedHin);
+      const baseRueck = computePlan(state.participants, "Rückfahrt", forcedRueck, removedRueck);
       const movesHinStr = readMovesParam("movesHin");
       const movesRueckStr = readMovesParam("movesRueck");
       const planViewMode = getPlanViewMode();
@@ -438,7 +559,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
                 ? `<span class="text-xs md:text-sm text-dpsg-blue/50 italic">Keine Mitfahrer</span>`
                 : `<div class="flex flex-wrap gap-1">${car.passengers.map((p) => `<button type="button" class="move-passenger inline-flex items-center gap-1 text-xs md:text-sm bg-white border border-dpsg-beige-2 rounded px-1.5 md:px-2 py-0.5 hover:border-dpsg-cyan" data-direction="${dir}" data-key="${encodeURIComponent(participantKey(p))}" data-from="${carIndex}" data-label="${escapeHtml(`${p.Vorname} ${p.Nachname}`)}"><span class="w-1.5 h-1.5 rounded-full ${getGroupColorClass(p.Gruppen)}"></span>${escapeHtml(p.Vorname)} ${escapeHtml(p.Nachname)}</button>`).join("")}</div>`;
 
-            return `<div class="border border-dpsg-beige-2 rounded-lg p-2 md:p-3 bg-dpsg-beige-1/30"><div class="flex items-start justify-between mb-2"><div class="flex items-center gap-2 min-w-0"><span class="w-2 h-2 rounded-full ${getGroupColorClass(car.driver.Gruppen)}"></span><span class="font-semibold text-dpsg-blue text-sm md:text-base truncate">${escapeHtml(car.driver.Vorname)} ${escapeHtml(car.driver.Nachname)}</span></div><span class="text-xs md:text-sm bg-dpsg-blue text-white px-2 py-0.5 rounded">${car.passengers.length + 1}/${car.seatsTotal}</span></div>${passengersHtml}</div>`;
+            return `<div class="border border-dpsg-beige-2 rounded-lg p-2 md:p-3 bg-dpsg-beige-1/30"><div class="flex items-start justify-between mb-2"><div class="flex items-center gap-2 min-w-0"><span class="w-2 h-2 rounded-full ${getGroupColorClass(car.driver.Gruppen)}"></span><button type="button" class="move-driver text-left font-semibold text-dpsg-blue text-sm md:text-base truncate hover:text-dpsg-cyan" data-direction="${dir}" data-key="${encodeURIComponent(participantKey(car.driver))}" data-from="${carIndex}" data-label="${escapeHtml(`${car.driver.Vorname} ${car.driver.Nachname}`)}">${escapeHtml(car.driver.Vorname)} ${escapeHtml(car.driver.Nachname)}</button></div><span class="text-xs md:text-sm bg-dpsg-blue text-white px-2 py-0.5 rounded">${car.passengers.length + 1}/${car.seatsTotal}</span></div>${passengersHtml}</div>`;
           }).join("");
 
         const unassignedPassengersHtml = plan.unassignedPassengers.length > 0
@@ -474,14 +595,15 @@ import BaseLayout from "../layouts/BaseLayout.astro";
         }).catch(() => {});
       };
 
-      document.querySelectorAll(".move-passenger").forEach((btn) => {
+      document.querySelectorAll(".move-passenger, .move-driver").forEach((btn) => {
         btn.addEventListener("click", () => {
           const direction = btn.dataset.direction;
           const from = Number(btn.dataset.from);
           const key = decodeURIComponent(btn.dataset.key);
           const label = btn.dataset.label || btn.textContent.trim();
           const plan = direction === "Hinfahrt" ? state.plans.Hinfahrt : state.plans.Rückfahrt;
-          openMoveModal(direction, from, key, label, plan);
+          const isDriver = btn.classList.contains("move-driver");
+          openMoveModal(direction, from, key, label, plan, isDriver);
         });
       });
     }
@@ -545,7 +667,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
       buildPriorityList();
       bindFilters();
       els.resetMoves.onclick = () => {
-        writeMoves("", "");
+        writePlannerState({ movesHin: "", movesRueck: "", forceHin: "", forceRueck: "", removeHin: "", removeRueck: "" });
         renderPlan();
       };
 
