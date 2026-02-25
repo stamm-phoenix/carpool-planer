@@ -90,7 +90,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 
     <div class="flex items-center gap-2 mb-4">
       <button id="plan-view-all" type="button" class="rounded border border-dpsg-beige-2 px-3 py-1.5 text-xs md:text-sm text-dpsg-blue bg-dpsg-beige-1">Alles</button>
-      <button id="plan-view-unassigned" type="button" class="rounded border border-dpsg-beige-2 px-3 py-1.5 text-xs md:text-sm text-dpsg-blue bg-white">Nur ohne Platz</button>
+      <button id="plan-view-unassigned" type="button" class="rounded border border-dpsg-beige-2 px-3 py-1.5 text-xs md:text-sm text-dpsg-blue bg-white">Nur Elternfahrt/ohne Platz</button>
       <button id="plan-view-drivers" type="button" class="rounded border border-dpsg-beige-2 px-3 py-1.5 text-xs md:text-sm text-dpsg-blue bg-white">Nur Fahrer</button>
     </div>
 
@@ -394,7 +394,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
         .join("");
       const leftoverButton = from === -1
         ? ""
-        : `<button type="button" class="rounded border border-dpsg-red/40 px-3 py-2 text-left text-sm text-dpsg-red hover:border-dpsg-red" data-target="-1">Ohne Platz</button>`;
+        : `<button type="button" class="rounded border border-dpsg-red/40 px-3 py-2 text-left text-sm text-dpsg-red hover:border-dpsg-red" data-target="-1">Elternfahrt/ohne Platz</button>`;
       els.moveModalOptions.innerHTML = `${carButtons}${leftoverButton}`;
       els.moveModal.classList.remove("hidden");
       els.moveModalOptions.querySelectorAll("button[data-target]").forEach((button) => {
@@ -420,8 +420,8 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 
       const hin = summarize(planHin);
       const rueck = summarize(planRueck);
-      els.hinSummary.innerHTML = `<span class="font-semibold">Hinfahrt:</span> <span class="${hin.leftovers > 0 ? "text-dpsg-red font-semibold" : ""}">${hin.leftovers} ohne Platz</span> · ${hin.emptySeats} freie Plätze${hin.overloadedCars > 0 ? ` · <span class="text-dpsg-red font-semibold">${hin.overloadedCars} überbelegt</span>` : ""}`;
-      els.rueckSummary.innerHTML = `<span class="font-semibold">Rückfahrt:</span> <span class="${rueck.leftovers > 0 ? "text-dpsg-red font-semibold" : ""}">${rueck.leftovers} ohne Platz</span> · ${rueck.emptySeats} freie Plätze${rueck.overloadedCars > 0 ? ` · <span class="text-dpsg-red font-semibold">${rueck.overloadedCars} überbelegt</span>` : ""}`;
+      els.hinSummary.innerHTML = `<span class="font-semibold">Hinfahrt:</span> <span class="${hin.leftovers > 0 ? "text-dpsg-red font-semibold" : ""}">${hin.leftovers} Elternfahrt/ohne Platz</span> · ${hin.emptySeats} freie Plätze${hin.overloadedCars > 0 ? ` · <span class="text-dpsg-red font-semibold">${hin.overloadedCars} überbelegt</span>` : ""}`;
+      els.rueckSummary.innerHTML = `<span class="font-semibold">Rückfahrt:</span> <span class="${rueck.leftovers > 0 ? "text-dpsg-red font-semibold" : ""}">${rueck.leftovers} Elternfahrt/ohne Platz</span> · ${rueck.emptySeats} freie Plätze${rueck.overloadedCars > 0 ? ` · <span class="text-dpsg-red font-semibold">${rueck.overloadedCars} überbelegt</span>` : ""}`;
 
       const sections = [["Hinfahrt", planHin], ["Rückfahrt", planRueck]];
       els.planGrid.innerHTML = sections.map(([dir, plan]) => {
@@ -438,7 +438,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
           }).join("");
 
         const leftoversHtml = plan.leftovers.length > 0
-          ? `<div class="border-2 border-dashed border-dpsg-red/40 rounded-lg p-2 md:p-3 bg-dpsg-red/5"><div class="font-semibold text-dpsg-red mb-2 text-sm md:text-base">Ohne Platz (${plan.leftovers.length})</div><div class="flex flex-wrap gap-1">${plan.leftovers.map((p) => `<button type="button" class="move-passenger inline-flex items-center gap-1 text-xs md:text-sm bg-white border border-dpsg-red/30 text-dpsg-red rounded px-1.5 md:px-2 py-0.5 hover:border-dpsg-cyan" data-direction="${dir}" data-key="${encodeURIComponent(participantKey(p))}" data-from="-1" data-label="${escapeHtml(`${p.Vorname} ${p.Nachname}`)}"><span class="w-1.5 h-1.5 rounded-full ${getGroupColorClass(p.Gruppen)}"></span>${escapeHtml(p.Vorname)} ${escapeHtml(p.Nachname)}</button>`).join("")}</div></div>`
+          ? `<div class="border-2 border-dashed border-dpsg-red/40 rounded-lg p-2 md:p-3 bg-dpsg-red/5"><div class="font-semibold text-dpsg-red mb-2 text-sm md:text-base">Elternfahrt/ohne Platz (${plan.leftovers.length})</div><div class="flex flex-wrap gap-1">${plan.leftovers.map((p) => `<button type="button" class="move-passenger inline-flex items-center gap-1 text-xs md:text-sm bg-white border border-dpsg-red/30 text-dpsg-red rounded px-1.5 md:px-2 py-0.5 hover:border-dpsg-cyan" data-direction="${dir}" data-key="${encodeURIComponent(participantKey(p))}" data-from="-1" data-label="${escapeHtml(`${p.Vorname} ${p.Nachname}`)}"><span class="w-1.5 h-1.5 rounded-full ${getGroupColorClass(p.Gruppen)}"></span>${escapeHtml(p.Vorname)} ${escapeHtml(p.Nachname)}</button>`).join("")}</div></div>`
           : "";
 
         const emptyHint = planViewMode === "unassigned" && plan.leftovers.length === 0
