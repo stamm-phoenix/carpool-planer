@@ -62,10 +62,6 @@ export function isLeiter(participant: Participant): boolean {
   return getPriorityTier(participant.Gruppen) === 0;
 }
 
-function isSameTier(a: Participant, b: Participant): boolean {
-  return getPriorityTier(a.Gruppen) === getPriorityTier(b.Gruppen);
-}
-
 function getSurname(p: Participant): string {
   return (p.Nachname ?? "").trim().toLowerCase();
 }
@@ -91,6 +87,21 @@ function pickBestPassenger(
   const driverSurname = getSurname(driver);
   const inCarSurnames = new Set(inCar.map(getSurname).filter(Boolean));
   const counts = surnameCounts(remaining);
+  const driverTier = getPriorityTier(driver.Gruppen);
+  const inCarTierCounts = new Map<number, number>();
+  for (const passenger of inCar) {
+    const tier = getPriorityTier(passenger.Gruppen);
+    inCarTierCounts.set(tier, (inCarTierCounts.get(tier) ?? 0) + 1);
+  }
+
+  let dominantInCarTier: number | null = null;
+  let dominantInCarTierCount = 0;
+  for (const [tier, count] of inCarTierCounts) {
+    if (count > dominantInCarTierCount) {
+      dominantInCarTier = tier;
+      dominantInCarTierCount = count;
+    }
+  }
 
   let bestIndex = -1;
   let bestScore = Number.NEGATIVE_INFINITY;
@@ -99,11 +110,21 @@ function pickBestPassenger(
     const candidate = remaining[i];
     const candidateSurname = getSurname(candidate);
     const familyCount = candidateSurname ? (counts.get(candidateSurname) ?? 0) : 0;
+    const candidateTier = getPriorityTier(candidate.Gruppen);
 
     let score = 0;
 
     if (preferLeiterForLeiterDriver && isLeiter(candidate)) score += 40;
-    if (isSameTier(driver, candidate)) score += 12;
+    if (candidateTier === driverTier) score += 50;
+    else score -= 12;
+
+    if (dominantInCarTier !== null) {
+      if (dominantInCarTier === driverTier) {
+        if (candidateTier === dominantInCarTier) score += 12;
+      } else if (candidateTier === dominantInCarTier) {
+        score += 4;
+      }
+    }
 
     if (candidateSurname && (inCarSurnames.has(candidateSurname) || candidateSurname === driverSurname)) {
       score += 50;
