@@ -144,7 +144,6 @@ export interface PlanResult {
   direction: Direction;
   cars: CarAssignment[];
   unassignedPassengers: Participant[];
-  unusedDrivers: Participant[];
   demand: number;
   seatsAvailable: number;
 }
@@ -196,39 +195,41 @@ function sortDriverCandidates(a: DriverCandidate, b: DriverCandidate): number {
  * Main planning function with smart driver selection:
  *
  * Key rules:
- * 1. Leitende with seats > 0 always drive.
- * 2. For everyone else, as few additional drivers as possible are used.
- * 3. Every participant appears in exactly one place: driver, passenger, or leftovers.
+ * 1. As few drivers as possible are selected.
+ * 2. Driver selection prefers larger cars first, then group priority.
+ * 3. Every participant appears in exactly one place: driver, passenger, or unassigned.
  */
 export function computePlan(participants: Participant[], direction: Direction): PlanResult {
   const seatKey = direction === "Hinfahrt" ? "Hinfahrt" : "Rückfahrt";
 
-  const mandatoryDrivers: DriverCandidate[] = [];
-  const optionalDrivers: DriverCandidate[] = [];
-  const rideDemand: Participant[] = [];
+  const driverCandidates: DriverCandidate[] = [];
 
   for (const p of participants) {
     const seats = p[seatKey] as number;
     if (seats > 0) {
-      const candidate: DriverCandidate = {
+      driverCandidates.push({
         participant: p,
         seats,
         passengerCapacity: Math.max(seats - 1, 0),
-      };
-      if (isLeiter(p)) mandatoryDrivers.push(candidate);
-      else optionalDrivers.push(candidate);
-    } else {
-      rideDemand.push(p);
+      });
     }
   }
 
-  mandatoryDrivers.sort(sortDriverCandidates);
-  optionalDrivers.sort(sortDriverCandidates);
+  driverCandidates.sort(sortDriverCandidates);
+
+  const selectedDrivers: DriverCandidate[] = [];
+  let selectedSeatTotal = 0;
+  for (const candidate of driverCandidates) {
+    if (selectedSeatTotal >= participants.length) break;
+    selectedDrivers.push(candidate);
+    selectedSeatTotal += candidate.seats;
+  }
+
+  const selectedDriverKeys = new Set(selectedDrivers.map((candidate) => participantKey(candidate.participant)));
+  const remainingPassengers = participants.filter((participant) => !selectedDriverKeys.has(participantKey(participant)));
 
   const cars: CarAssignment[] = [];
-  const remainingPassengers = [...rideDemand];
-
-  for (const { participant: driver, seats, passengerCapacity } of mandatoryDrivers) {
+  for (const { participant: driver, seats, passengerCapacity } of selectedDrivers) {
     const passengers: Participant[] = [];
     while (passengers.length < passengerCapacity && remainingPassengers.length > 0) {
       const picked = pickBestPassenger(driver, remainingPassengers, passengers, true);
@@ -244,35 +245,10 @@ export function computePlan(participants: Participant[], direction: Direction): 
     });
   }
 
-  const unusedOptionalDrivers: Participant[] = [];
-  for (const { participant: driver, seats, passengerCapacity } of optionalDrivers) {
-    const mustUseThisDriver = remainingPassengers.length > 0 && passengerCapacity > 0;
-
-    if (!mustUseThisDriver) {
-      unusedOptionalDrivers.push(driver);
-      continue;
-    }
-
-    const passengers: Participant[] = [];
-    while (passengers.length < passengerCapacity && remainingPassengers.length > 0) {
-      const picked = pickBestPassenger(driver, remainingPassengers, passengers, false);
-      if (!picked) break;
-      passengers.push(picked);
-    }
-
-    cars.push({
-      driver,
-      seatsTotal: seats,
-      passengerCapacity,
-      passengers,
-    });
-  }
-
   rebalanceSparseCars(cars);
 
   const unassignedPassengers = [...remainingPassengers];
-  const unusedDrivers = [...unusedOptionalDrivers];
-  const demand = rideDemand.length;
+  const demand = participants.length - selectedDrivers.length;
   const seatsAvailable = cars.reduce((sum, car) => sum + car.passengerCapacity, 0);
 
   const representedKeys = new Set<string>();
@@ -283,9 +259,6 @@ export function computePlan(participants: Participant[], direction: Direction): 
     }
   }
   for (const p of unassignedPassengers) {
-    representedKeys.add(participantKey(p));
-  }
-  for (const p of unusedDrivers) {
     representedKeys.add(participantKey(p));
   }
 
@@ -299,7 +272,6 @@ export function computePlan(participants: Participant[], direction: Direction): 
     direction,
     cars,
     unassignedPassengers,
-    unusedDrivers,
     demand,
     seatsAvailable,
   };
@@ -484,7 +456,6 @@ export function planToCsv(plan: PlanResult): string {
   const rows: string[] = [];
 
   const fullName = (p: Participant): string => `${p.Vorname} ${p.Nachname}`.trim();
-  const seatKey = plan.direction === "Hinfahrt" ? "Hinfahrt" : "Rückfahrt";
 
   for (const car of plan.cars) {
     const driverName = fullName(car.driver);
@@ -510,18 +481,6 @@ export function planToCsv(plan: PlanResult): string {
         csvEscape(""),
       ].join(","));
     }
-  }
-
-  for (const driver of plan.unusedDrivers) {
-    rows.push([
-      csvEscape(plan.direction),
-      csvEscape("Fahrer (nicht benoetigt)"),
-      csvEscape(fullName(driver)),
-      csvEscape(driver.Gruppen),
-      csvEscape(fullName(driver)),
-      csvEscape(driver[seatKey]),
-      csvEscape(""),
-    ].join(","));
   }
 
   for (const passenger of plan.unassignedPassengers) {
