@@ -343,7 +343,12 @@ import BaseLayout from "../layouts/BaseLayout.astro";
     function summarize(plan) {
       const emptySeats = plan.cars.reduce((sum, car) => sum + Math.max(0, car.seatsTotal - 1 - car.passengers.length), 0);
       const overloadedCars = plan.cars.filter((car) => car.passengers.length > car.passengerCapacity).length;
-      return { emptySeats, overloadedCars, leftovers: plan.leftovers.length };
+      return {
+        emptySeats,
+        overloadedCars,
+        unassignedPassengers: plan.unassignedPassengers.length,
+        unusedDrivers: plan.unusedDrivers.length,
+      };
     }
 
     function getPlanViewMode() {
@@ -420,8 +425,8 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 
       const hin = summarize(planHin);
       const rueck = summarize(planRueck);
-      els.hinSummary.innerHTML = `<span class="font-semibold">Hinfahrt:</span> <span class="${hin.leftovers > 0 ? "text-dpsg-red font-semibold" : ""}">${hin.leftovers} Elternfahrt/ohne Platz</span> · ${hin.emptySeats} freie Plätze${hin.overloadedCars > 0 ? ` · <span class="text-dpsg-red font-semibold">${hin.overloadedCars} überbelegt</span>` : ""}`;
-      els.rueckSummary.innerHTML = `<span class="font-semibold">Rückfahrt:</span> <span class="${rueck.leftovers > 0 ? "text-dpsg-red font-semibold" : ""}">${rueck.leftovers} Elternfahrt/ohne Platz</span> · ${rueck.emptySeats} freie Plätze${rueck.overloadedCars > 0 ? ` · <span class="text-dpsg-red font-semibold">${rueck.overloadedCars} überbelegt</span>` : ""}`;
+      els.hinSummary.innerHTML = `<span class="font-semibold">Hinfahrt:</span> <span class="${hin.unassignedPassengers > 0 ? "text-dpsg-red font-semibold" : ""}">${hin.unassignedPassengers} Elternfahrt/ohne Platz</span> · ${hin.unusedDrivers} weitere Fahrer (nicht benötigt) · ${hin.emptySeats} freie Plätze${hin.overloadedCars > 0 ? ` · <span class="text-dpsg-red font-semibold">${hin.overloadedCars} überbelegt</span>` : ""}`;
+      els.rueckSummary.innerHTML = `<span class="font-semibold">Rückfahrt:</span> <span class="${rueck.unassignedPassengers > 0 ? "text-dpsg-red font-semibold" : ""}">${rueck.unassignedPassengers} Elternfahrt/ohne Platz</span> · ${rueck.unusedDrivers} weitere Fahrer (nicht benötigt) · ${rueck.emptySeats} freie Plätze${rueck.overloadedCars > 0 ? ` · <span class="text-dpsg-red font-semibold">${rueck.overloadedCars} überbelegt</span>` : ""}`;
 
       const sections = [["Hinfahrt", planHin], ["Rückfahrt", planRueck]];
       els.planGrid.innerHTML = sections.map(([dir, plan]) => {
@@ -437,15 +442,19 @@ import BaseLayout from "../layouts/BaseLayout.astro";
             return `<div class="border border-dpsg-beige-2 rounded-lg p-2 md:p-3 bg-dpsg-beige-1/30"><div class="flex items-start justify-between mb-2"><div class="flex items-center gap-2 min-w-0"><span class="w-2 h-2 rounded-full ${getGroupColorClass(car.driver.Gruppen)}"></span><span class="font-semibold text-dpsg-blue text-sm md:text-base truncate">${escapeHtml(car.driver.Vorname)} ${escapeHtml(car.driver.Nachname)}</span></div><span class="text-xs md:text-sm bg-dpsg-blue text-white px-2 py-0.5 rounded">${car.passengers.length + 1}/${car.seatsTotal}</span></div>${passengersHtml}</div>`;
           }).join("");
 
-        const leftoversHtml = plan.leftovers.length > 0
-          ? `<div class="border-2 border-dashed border-dpsg-red/40 rounded-lg p-2 md:p-3 bg-dpsg-red/5"><div class="font-semibold text-dpsg-red mb-2 text-sm md:text-base">Elternfahrt/ohne Platz (${plan.leftovers.length})</div><div class="flex flex-wrap gap-1">${plan.leftovers.map((p) => `<button type="button" class="move-passenger inline-flex items-center gap-1 text-xs md:text-sm bg-white border border-dpsg-red/30 text-dpsg-red rounded px-1.5 md:px-2 py-0.5 hover:border-dpsg-cyan" data-direction="${dir}" data-key="${encodeURIComponent(participantKey(p))}" data-from="-1" data-label="${escapeHtml(`${p.Vorname} ${p.Nachname}`)}"><span class="w-1.5 h-1.5 rounded-full ${getGroupColorClass(p.Gruppen)}"></span>${escapeHtml(p.Vorname)} ${escapeHtml(p.Nachname)}</button>`).join("")}</div></div>`
+        const unassignedPassengersHtml = plan.unassignedPassengers.length > 0
+          ? `<div class="border-2 border-dashed border-dpsg-red/40 rounded-lg p-2 md:p-3 bg-dpsg-red/5"><div class="font-semibold text-dpsg-red mb-2 text-sm md:text-base">Elternfahrt/ohne Platz (${plan.unassignedPassengers.length})</div><div class="flex flex-wrap gap-1">${plan.unassignedPassengers.map((p) => `<button type="button" class="move-passenger inline-flex items-center gap-1 text-xs md:text-sm bg-white border border-dpsg-red/30 text-dpsg-red rounded px-1.5 md:px-2 py-0.5 hover:border-dpsg-cyan" data-direction="${dir}" data-key="${encodeURIComponent(participantKey(p))}" data-from="-1" data-label="${escapeHtml(`${p.Vorname} ${p.Nachname}`)}"><span class="w-1.5 h-1.5 rounded-full ${getGroupColorClass(p.Gruppen)}"></span>${escapeHtml(p.Vorname)} ${escapeHtml(p.Nachname)}</button>`).join("")}</div></div>`
           : "";
 
-        const emptyHint = planViewMode === "unassigned" && plan.leftovers.length === 0
+        const unusedDriversHtml = plan.unusedDrivers.length > 0
+          ? `<div class="border border-dpsg-beige-2 rounded-lg p-2 md:p-3 bg-white"><div class="font-semibold text-dpsg-blue mb-2 text-sm md:text-base">Weitere Fahrer (nicht benötigt) (${plan.unusedDrivers.length})</div><div class="flex flex-wrap gap-1">${plan.unusedDrivers.map((p) => `<span class="inline-flex items-center gap-1 text-xs md:text-sm bg-dpsg-beige-1 border border-dpsg-beige-2 text-dpsg-blue rounded px-1.5 md:px-2 py-0.5"><span class="w-1.5 h-1.5 rounded-full ${getGroupColorClass(p.Gruppen)}"></span>${escapeHtml(p.Vorname)} ${escapeHtml(p.Nachname)} (${dir === "Hinfahrt" ? p.Hinfahrt : p.Rückfahrt})</span>`).join("")}</div></div>`
+          : "";
+
+        const emptyHint = planViewMode === "unassigned" && plan.unassignedPassengers.length === 0
           ? `<div class="rounded border border-dpsg-beige-2 bg-dpsg-beige-1/40 p-3 text-sm text-dpsg-blue/60">Alle Teilnehmer haben einen Platz.</div>`
           : "";
 
-        return `<div><div class="flex items-center justify-between mb-3"><h3 class="font-serif font-bold text-dpsg-blue">${dir}</h3><span class="text-xs md:text-sm px-2 py-0.5 rounded ${plan.leftovers.length > 0 ? "bg-dpsg-red/10 text-dpsg-red" : "bg-dpsg-pfadfinder/10 text-dpsg-pfadfinder"}">${plan.seatsAvailable} Mitfahrplätze / ${plan.demand} Mitfahrbedarf</span></div><div class="space-y-3">${carsHtml}${leftoversHtml}${emptyHint}</div></div>`;
+        return `<div><div class="flex items-center justify-between mb-3"><h3 class="font-serif font-bold text-dpsg-blue">${dir}</h3><span class="text-xs md:text-sm px-2 py-0.5 rounded ${plan.unassignedPassengers.length > 0 ? "bg-dpsg-red/10 text-dpsg-red" : "bg-dpsg-pfadfinder/10 text-dpsg-pfadfinder"}">${plan.seatsAvailable} Mitfahrplätze / ${plan.demand} Mitfahrbedarf</span></div><div class="space-y-3">${carsHtml}${unassignedPassengersHtml}${unusedDriversHtml}${emptyHint}</div></div>`;
       }).join("");
 
       const csvBom = "\uFEFF";

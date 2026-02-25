@@ -143,12 +143,47 @@ export interface CarAssignment {
 export interface PlanResult {
   direction: Direction;
   cars: CarAssignment[];
-  leftovers: Participant[];
+  unassignedPassengers: Participant[];
+  unusedDrivers: Participant[];
   demand: number;
   seatsAvailable: number;
 }
 
 type DriverCandidate = { participant: Participant; seats: number; passengerCapacity: number };
+
+function rebalanceSparseCars(cars: CarAssignment[]): void {
+  if (cars.length < 2) return;
+
+  while (true) {
+    const sourceIndex = cars.findIndex((car) => car.passengers.length === 1);
+    if (sourceIndex === -1) break;
+
+    const source = cars[sourceIndex];
+    const passenger = source.passengers[0];
+    if (!passenger) break;
+
+    let bestTargetIndex = -1;
+    let bestTargetLoad = -1;
+
+    for (let i = 0; i < cars.length; i += 1) {
+      if (i === sourceIndex) continue;
+      const target = cars[i];
+      const targetHasSpace = target.passengers.length < target.passengerCapacity;
+      if (!targetHasSpace) continue;
+      if (target.passengers.length === 0) continue;
+
+      if (target.passengers.length > bestTargetLoad) {
+        bestTargetLoad = target.passengers.length;
+        bestTargetIndex = i;
+      }
+    }
+
+    if (bestTargetIndex === -1) break;
+
+    source.passengers.pop();
+    cars[bestTargetIndex].passengers.push(passenger);
+  }
+}
 
 function sortDriverCandidates(a: DriverCandidate, b: DriverCandidate): number {
   if (b.passengerCapacity !== a.passengerCapacity) return b.passengerCapacity - a.passengerCapacity;
@@ -233,7 +268,10 @@ export function computePlan(participants: Participant[], direction: Direction): 
     });
   }
 
-  const leftovers = [...remainingPassengers, ...unusedOptionalDrivers];
+  rebalanceSparseCars(cars);
+
+  const unassignedPassengers = [...remainingPassengers];
+  const unusedDrivers = [...unusedOptionalDrivers];
   const demand = rideDemand.length;
   const seatsAvailable = cars.reduce((sum, car) => sum + car.passengerCapacity, 0);
 
@@ -244,7 +282,10 @@ export function computePlan(participants: Participant[], direction: Direction): 
       representedKeys.add(participantKey(p));
     }
   }
-  for (const p of leftovers) {
+  for (const p of unassignedPassengers) {
+    representedKeys.add(participantKey(p));
+  }
+  for (const p of unusedDrivers) {
     representedKeys.add(participantKey(p));
   }
 
@@ -257,7 +298,8 @@ export function computePlan(participants: Participant[], direction: Direction): 
   return {
     direction,
     cars,
-    leftovers,
+    unassignedPassengers,
+    unusedDrivers,
     demand,
     seatsAvailable,
   };
@@ -274,7 +316,7 @@ export interface ManualMove {
   toCarIndex: number; // -1 = to leftovers
 }
 
-function rebalanceCars(cars: CarAssignment[], leftovers: Participant[]): { cars: CarAssignment[]; leftovers: Participant[] } {
+function rebalanceCars(cars: CarAssignment[], unassignedPassengers: Participant[]): { cars: CarAssignment[]; unassignedPassengers: Participant[] } {
   const driverKeys = new Set(cars.map((car) => participantKey(car.driver)));
   const assignedKeys = new Set<string>();
 
@@ -313,7 +355,7 @@ function rebalanceCars(cars: CarAssignment[], leftovers: Participant[]): { cars:
     }
   }
 
-  for (const p of leftovers) {
+  for (const p of unassignedPassengers) {
     pushToPool(p);
   }
 
@@ -329,7 +371,7 @@ function rebalanceCars(cars: CarAssignment[], leftovers: Participant[]): { cars:
 
   return {
     cars: cleanedCars,
-    leftovers: pool,
+    unassignedPassengers: pool,
   };
 }
 
@@ -338,15 +380,15 @@ export function applyManualMoves(plan: PlanResult, moves: ManualMove[]): PlanRes
     ...car,
     passengers: [...car.passengers],
   }));
-  let newLeftovers = [...plan.leftovers];
+  let newUnassignedPassengers = [...plan.unassignedPassengers];
 
   for (const move of moves) {
     let passenger: Participant | undefined;
 
     if (move.fromCarIndex === -1) {
-      const idx = newLeftovers.findIndex((p) => participantKey(p) === move.participantKey);
+      const idx = newUnassignedPassengers.findIndex((p) => participantKey(p) === move.participantKey);
       if (idx !== -1) {
-        passenger = newLeftovers.splice(idx, 1)[0];
+        passenger = newUnassignedPassengers.splice(idx, 1)[0];
       }
     } else if (move.fromCarIndex >= 0 && move.fromCarIndex < newCars.length) {
       const car = newCars[move.fromCarIndex];
@@ -359,18 +401,18 @@ export function applyManualMoves(plan: PlanResult, moves: ManualMove[]): PlanRes
     if (!passenger) continue;
 
     if (move.toCarIndex === -1) {
-      newLeftovers.push(passenger);
+      newUnassignedPassengers.push(passenger);
     } else if (move.toCarIndex >= 0 && move.toCarIndex < newCars.length) {
       newCars[move.toCarIndex].passengers.push(passenger);
     }
   }
 
-  const balanced = rebalanceCars(newCars, newLeftovers);
+  const balanced = rebalanceCars(newCars, newUnassignedPassengers);
 
   return {
     ...plan,
     cars: balanced.cars,
-    leftovers: balanced.leftovers,
+    unassignedPassengers: balanced.unassignedPassengers,
     seatsAvailable: balanced.cars.reduce((sum, car) => sum + car.passengerCapacity, 0),
   };
 }
@@ -394,7 +436,7 @@ export function parseMovesFromUrl(movesStr: string, plan: PlanResult): ManualMov
     });
   });
 
-  plan.leftovers.forEach((p, idx) => {
+  plan.unassignedPassengers.forEach((p, idx) => {
     locationMap.set(participantKey(p), { carIndex: -1, passengerIndex: idx });
   });
 
@@ -438,15 +480,61 @@ function csvEscape(value: string | number): string {
 }
 
 export function planToCsv(plan: PlanResult): string {
-  const header = "Richtung,Fahrer,Plätze,Mitfahrende";
-  const rows = plan.cars.map((car) => {
-    const name = `${car.driver.Vorname} ${car.driver.Nachname}`.trim();
-    const passengers = car.passengers.map((p) => `${p.Vorname} ${p.Nachname}`.trim()).join(" | ");
-    return [csvEscape(plan.direction), csvEscape(name), csvEscape(car.seatsTotal), csvEscape(passengers)].join(",");
-  });
-  if (plan.leftovers.length) {
-    const rest = plan.leftovers.map((p) => `${p.Vorname} ${p.Nachname}`).join(" | ");
-    rows.push([csvEscape(plan.direction), csvEscape("OHNE PLATZ"), csvEscape(0), csvEscape(rest)].join(","));
+  const header = "Richtung,Status,Name,Gruppe,Fahrer,Plätze,Mitfahrende";
+  const rows: string[] = [];
+
+  const fullName = (p: Participant): string => `${p.Vorname} ${p.Nachname}`.trim();
+  const seatKey = plan.direction === "Hinfahrt" ? "Hinfahrt" : "Rückfahrt";
+
+  for (const car of plan.cars) {
+    const driverName = fullName(car.driver);
+    const passengersText = car.passengers.map((p) => fullName(p)).join(" | ");
+    rows.push([
+      csvEscape(plan.direction),
+      csvEscape("Fahrer"),
+      csvEscape(driverName),
+      csvEscape(car.driver.Gruppen),
+      csvEscape(driverName),
+      csvEscape(car.seatsTotal),
+      csvEscape(passengersText),
+    ].join(","));
+
+    for (const passenger of car.passengers) {
+      rows.push([
+        csvEscape(plan.direction),
+        csvEscape("Mitfahrend"),
+        csvEscape(fullName(passenger)),
+        csvEscape(passenger.Gruppen),
+        csvEscape(driverName),
+        csvEscape(""),
+        csvEscape(""),
+      ].join(","));
+    }
   }
+
+  for (const driver of plan.unusedDrivers) {
+    rows.push([
+      csvEscape(plan.direction),
+      csvEscape("Fahrer (nicht benoetigt)"),
+      csvEscape(fullName(driver)),
+      csvEscape(driver.Gruppen),
+      csvEscape(fullName(driver)),
+      csvEscape(driver[seatKey]),
+      csvEscape(""),
+    ].join(","));
+  }
+
+  for (const passenger of plan.unassignedPassengers) {
+    rows.push([
+      csvEscape(plan.direction),
+      csvEscape("Ohne Platz"),
+      csvEscape(fullName(passenger)),
+      csvEscape(passenger.Gruppen),
+      csvEscape(""),
+      csvEscape(""),
+      csvEscape(""),
+    ].join(","));
+  }
+
   return [header, ...rows].join("\n");
 }
