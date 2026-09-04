@@ -1,62 +1,514 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
 ---
+
 <BaseLayout title="Fahrtenplanung">
   <header class="topbar">
     <div class="shell topbar-inner">
-      <a class="brand" href="/"><img src="/favicon.svg" alt=""/><span><b>Stamm Phoenix</b><small>Fahrtenplanung</small></span></a>
-      <nav aria-label="Bereiche"><button class="nav-tab active" data-tab="plan">Planung</button><button class="nav-tab" data-tab="people">Teilnehmende</button></nav>
+      <a class="brand" href="/">
+        <img src="/favicon.svg" alt="" />
+        <span><b>Stamm Phoenix</b><small>Fahrtenplanung</small></span>
+      </a>
+      <nav aria-label="Bereiche">
+        <button class="nav-tab active" data-tab="plan">Planung</button>
+        <button class="nav-tab" data-tab="people">Teilnehmende</button>
+      </nav>
       <a class="logout" href="/.auth/logout">Abmelden</a>
     </div>
   </header>
+
   <main class="shell page">
     <div id="error" class="error hidden" role="alert"></div>
+
     <section id="plan" data-panel>
-      <div class="title-row"><div><p id="event-date" class="event-date"></p><h1 id="event-title">Fahrtenplanung</h1><p>Elternautos werden über das eigene Kind erkannt. Ein Elternname wird nicht benötigt.</p></div><div class="live"><i id="live-dot"></i><span id="live-text">Campflow wird geladen</span></div></div>
-      <div class="direction"><button class="active" data-direction="Hinfahrt">Hinfahrt</button><button data-direction="Rückfahrt">Rückfahrt</button></div>
+      <div class="title-row">
+        <div>
+          <p id="event-date" class="event-date"></p>
+          <h1 id="event-title">Fahrtenplanung</h1>
+          <p>Elternautos werden über das eigene Kind erkannt. Ein Elternname wird nicht benötigt.</p>
+        </div>
+        <div class="live"><i id="live-dot"></i><span id="live-text">Campflow wird geladen</span></div>
+      </div>
+
+      <div class="direction">
+        <button class="active" data-direction="Hinfahrt">Hinfahrt</button>
+        <button data-direction="Rückfahrt">Rückfahrt</button>
+      </div>
       <div id="summary" class="summary"></div>
-      <div class="section-head"><div><h2>Autos</h2><p>Das eigene Kind bleibt immer im Auto des Elternteils.</p></div><div><button id="copy" class="link-btn">CSV kopieren</button><button id="download" class="link-btn">CSV laden</button></div></div>
+
+      <div class="section-head">
+        <div>
+          <h2>Autos</h2>
+          <p>Das eigene Kind bleibt immer im Auto des Elternteils.</p>
+        </div>
+        <div>
+          <button id="copy" class="link-btn">CSV kopieren</button>
+          <button id="download" class="link-btn">CSV laden</button>
+        </div>
+      </div>
+
       <ol id="cars" class="cars"></ol>
-      <section id="unassigned-wrap" class="unassigned"><div class="section-head"><div><h2>Noch ohne Platz</h2><p>Antippen, um ein freies Auto auszuwählen.</p></div><strong id="unassigned-count"></strong></div><ul id="unassigned"></ul></section>
+
+      <section id="unassigned-wrap" class="unassigned">
+        <div class="section-head">
+          <div>
+            <h2>Noch ohne Platz</h2>
+            <p>Antippen, um ein freies Auto auszuwählen.</p>
+          </div>
+          <strong id="unassigned-count"></strong>
+        </div>
+        <ul id="unassigned"></ul>
+      </section>
     </section>
+
     <section id="people" data-panel class="hidden">
-      <div class="title-row"><div><h1>Teilnehmende</h1><p>Hin und Rück sind Kinderplätze, die ein Elternteil oder Leitender anbietet.</p></div><strong id="people-count"></strong></div>
-      <label class="search"><span>Suchen</span><input id="q" type="search" placeholder="Name oder Gruppe"/></label>
-      <div class="table-scroll"><table><thead><tr><th>Name</th><th>Gruppe</th><th class="num">Hin</th><th class="num">Rück</th></tr></thead><tbody id="people-body"></tbody></table></div>
+      <div class="title-row">
+        <div>
+          <h1>Teilnehmende</h1>
+          <p>Hin und Rück sind Kinderplätze, die ein Elternteil oder Leitender anbietet.</p>
+        </div>
+        <strong id="people-count"></strong>
+      </div>
+      <label class="search">
+        <span>Suchen</span>
+        <input id="q" type="search" placeholder="Name oder Gruppe" />
+      </label>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Name</th><th>Gruppe</th><th class="num">Hin</th><th class="num">Rück</th></tr></thead>
+          <tbody id="people-body"></tbody>
+        </table>
+      </div>
     </section>
-    <details class="settings"><summary>Event & Campflow</summary><div class="settings-grid"><label><span>Event</span><select id="event"></select></label><label><span>Hinfahrt-Feld</span><select id="hin-col"></select></label><label><span>Rückfahrt-Feld</span><select id="rueck-col"></select></label><button id="sync" class="primary">Synchronisieren</button></div></details>
+
+    <details class="settings">
+      <summary>Event & Campflow</summary>
+      <div class="settings-grid">
+        <label><span>Event</span><select id="event"></select></label>
+        <label><span>Hinfahrt-Feld</span><select id="hin-col"></select></label>
+        <label><span>Rückfahrt-Feld</span><select id="rueck-col"></select></label>
+        <button id="sync" class="primary">Synchronisieren</button>
+      </div>
+    </details>
   </main>
-  <dialog id="move"><form method="dialog"><header><div><h2 id="move-title"></h2><p>Anderes Auto auswählen</p></div><button aria-label="Schließen">×</button></header><div id="move-options"></div></form></dialog>
+
+  <dialog id="move">
+    <form method="dialog">
+      <header>
+        <div><h2 id="move-title"></h2><p>Anderes Auto auswählen</p></div>
+        <button aria-label="Schließen">×</button>
+      </header>
+      <div id="move-options"></div>
+    </form>
+  </dialog>
+
   <script>
     // @ts-nocheck
-    import {applyManualMoves,carLabel,computePlan,parseMovesFromUrl,participantKey,planToCsv} from "../lib/planner";
-    const DEF={hinfahrtColumn:"col_K0HMI9HMkVblaqpBqFBu",rueckfahrtColumn:"col_tSMUO3gitt0dXFMOhWGq"};
-    const s={events:[],people:[],columns:[],event:"",name:"",direction:"Hinfahrt",mapping:{...DEF},plans:{}};
-    const $=id=>document.getElementById(id), e={error:$("error"),eventTitle:$("event-title"),eventDate:$("event-date"),liveDot:$("live-dot"),liveText:$("live-text"),summary:$("summary"),cars:$("cars"),unassigned:$("unassigned"),unassignedCount:$("unassigned-count"),unassignedWrap:$("unassigned-wrap"),peopleCount:$("people-count"),peopleBody:$("people-body"),q:$("q"),event:$("event"),hin:$("hin-col"),rueck:$("rueck-col"),sync:$("sync"),copy:$("copy"),download:$("download"),move:$("move"),moveTitle:$("move-title"),moveOptions:$("move-options")};
-    const esc=x=>String(x??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;");
-    const name=p=>`${p.Vorname} ${p.Nachname}`.trim();
-    const key=p=>participantKey(p), dirKey=(base,d=s.direction)=>`${base}${d==="Hinfahrt"?"Hin":"Rueck"}`;
-    const url=()=>new URL(location.href), param=(n,f="")=>url().searchParams.get(n)??f;
-    function setParam(n,v){const u=url();v?u.searchParams.set(n,v):u.searchParams.delete(n);history.replaceState({},"",u)}
-    const storeKey=()=>`carpool:${s.event||"default"}`;
-    function read(n){const p=param(n);if(p)return p;try{return JSON.parse(localStorage.getItem(storeKey())||"{}")[n]||""}catch{return ""}}
-    function write(n,v){setParam(n,v);try{const x=JSON.parse(localStorage.getItem(storeKey())||"{}");x[n]=v;localStorage.setItem(storeKey(),JSON.stringify(x))}catch{}}
-    const keys=v=>(v||"").split(",").filter(Boolean).map(x=>{try{return decodeURIComponent(x)}catch{return ""}}).filter(Boolean);
-    const keyList=a=>[...new Set(a)].map(encodeURIComponent).join(",");
-    async function api(p){const r=await fetch(`/api/campflow?${new URLSearchParams(p)}`);if(!r.ok){let m=`${r.status} ${r.statusText}`;try{m=(await r.json()).error||m}catch{}throw new Error(m)}return r.json()}
-    function normalize(a){return(a||[]).filter(p=>name(p)).map(p=>({...p,Vorname:(p.Vorname||"").trim(),Nachname:(p.Nachname||"").trim(),Gruppen:(p.Gruppen||"").trim(),Hinfahrt:Math.max(0,Math.trunc(Number(p.Hinfahrt)||0)),Rückfahrt:Math.max(0,Math.trunc(Number(p.Rückfahrt)||0))}))}
-    function date(x){if(!x)return"";const d=new Date(x);return Number.isNaN(+d)?x:new Intl.DateTimeFormat("de-DE",{day:"2-digit",month:"long",year:"numeric"}).format(d)}
-    function group(p){const g=(p.Gruppen||"").toLowerCase();if(g.includes("wöl"))return["Wölflinge","#ff6400"];if(g.includes("jungpfad"))return["Jupfis","#2f53a7"];if(g.includes("pfad"))return["Pfadis","#00823c"];if(g.includes("rover"))return["Rover","#cc1f2f"];if(g.includes("leit"))return["Leitende","#7b8578"];return[p.Gruppen||"–","#8b918f"]}
-    function plans(){for(const d of ["Hinfahrt","Rückfahrt"]){const b=computePlan(s.people,d,keys(read(dirKey("force",d))),[],keys(read(dirKey("disable",d))));s.plans[d]=applyManualMoves(b,parseMovesFromUrl(read(dirKey("moves",d)),b))}}
-    function renderHeader(){const x=s.events.find(v=>v.id===s.event);e.eventTitle.textContent=x?.name||s.name;e.eventDate.textContent=[date(x?.startDate),date(x?.endDate)].filter(Boolean).filter((v,i,a)=>a.indexOf(v)===i).join(" – ")}
-    function renderPlan(){plans();const p=s.plans[s.direction];document.querySelectorAll("[data-direction]").forEach(b=>b.classList.toggle("active",b.dataset.direction===s.direction));const used=p.cars.reduce((n,c)=>n+c.passengers.length,0),free=Math.max(0,p.seatsAvailable-used);e.summary.innerHTML=`<span><b>${p.cars.length}</b> Autos</span><span><b>${used}/${p.seatsAvailable}</b> Kinderplätze</span><span><b>${free}</b> frei</span><span class="${p.unassignedPassengers.length?"warn":"ok"}"><b>${p.unassignedPassengers.length}</b> ohne Platz</span>`;e.cars.innerHTML=p.cars.map((c,i)=>`<li><span class="route-node">${i+1}</span><article><header><div><small>${c.kind==="parent"?"Elternauto":"Leiterauto"}</small><h3>${esc(carLabel(c))}</h3><p>${c.kind==="parent"?`${esc(name(c.anchor))} fährt fest mit.`:`${esc(name(c.anchor))} fährt selbst.`} ${c.passengers.length}/${c.childCapacity} Kinderplätze belegt.</p></div><button class="link-btn disable" data-key="${encodeURIComponent(key(c.anchor))}">Auto nicht nutzen</button></header><div class="capacity"><i style="width:${Math.min(100,c.passengers.length/c.childCapacity*100)}%"></i></div><ul>${c.passengers.map(x=>{const lock=c.kind==="parent"&&key(x)===key(c.anchor),g=group(x);return `<li>${lock?`<span class="person locked"><i style="background:${g[1]}"></i><b>${esc(name(x))}</b><small>eigenes Kind · fest</small></span>`:`<button class="person move-person" data-key="${encodeURIComponent(key(x))}" data-from="${i}"><i style="background:${g[1]}"></i><b>${esc(name(x))}</b><small>${esc(g[0])}</small></button>`}</li>`}).join("")}</ul></article></li>`).join("");e.unassignedCount.textContent=p.unassignedPassengers.length;e.unassignedWrap.classList.toggle("empty",!p.unassignedPassengers.length);e.unassigned.innerHTML=p.unassignedPassengers.length?p.unassignedPassengers.map(x=>{const g=group(x);return`<li><button class="person move-person" data-key="${encodeURIComponent(key(x))}" data-from="-1"><i style="background:${g[1]}"></i><b>${esc(name(x))}</b><small>${esc(g[0])}</small></button></li>`}).join(""):`<li class="all-good">Alle haben einen Platz.</li>`;bindPlanActions()}
-    function renderPeople(){const q=(e.q.value||"").toLowerCase(),a=s.people.filter(p=>!q||name(p).toLowerCase().includes(q)||(p.Gruppen||"").toLowerCase().includes(q));e.peopleCount.textContent=`${a.length} von ${s.people.length}`;e.peopleBody.innerHTML=a.map(p=>{const g=group(p);return`<tr><td><span class="table-name"><i style="background:${g[1]}"></i>${esc(name(p))}</span></td><td>${esc(g[0])}</td><td class="num ${p.Hinfahrt?"cap":""}">${p.Hinfahrt||"–"}</td><td class="num ${p.Rückfahrt?"cap":""}">${p.Rückfahrt||"–"}</td></tr>`}).join("")}
-    function renderSettings(){e.event.innerHTML=s.events.map(x=>`<option value="${esc(x.id)}" ${x.id===s.event?"selected":""}>${esc(x.name)}</option>`).join("");const a=s.columns.length?s.columns:[{id:s.mapping.hinfahrtColumn,name:"Hinfahrt"},{id:s.mapping.rueckfahrtColumn,name:"Rückfahrt"}],o=[...new Map(a.map(x=>[x.id,x])).values()].map(x=>`<option value="${esc(x.id)}">${esc(x.name||x.id)}</option>`).join("");e.hin.innerHTML=o;e.rueck.innerHTML=o;e.hin.value=s.mapping.hinfahrtColumn;e.rueck.value=s.mapping.rueckfahrtColumn}
-    function bindPlanActions(){document.querySelectorAll(".move-person").forEach(b=>b.onclick=()=>openMove(decodeURIComponent(b.dataset.key),Number(b.dataset.from)));document.querySelectorAll(".disable").forEach(b=>b.onclick=()=>{const n=dirKey("disable");write(n,keyList([...keys(read(n)),decodeURIComponent(b.dataset.key)]));write(dirKey("moves"),"");renderPlan()})}
-    function openMove(k,from){const p=s.plans[s.direction],person=s.people.find(x=>key(x)===k);e.moveTitle.textContent=name(person);const opts=[];p.cars.forEach((c,i)=>{if(i!==from&&c.passengers.length<c.childCapacity)opts.push(`<button type="button" data-target="${i}"><span><b>${esc(carLabel(c))}</b><small>${c.childCapacity-c.passengers.length} frei</small></span><em>Auswählen</em></button>`)});if(from!==-1)opts.push(`<button type="button" data-target="-1"><span><b>Ohne Zuordnung</b><small>aus aktuellem Auto nehmen</small></span><em>Auswählen</em></button>`);e.moveOptions.innerHTML=opts.join("")||"<p>Kein anderes Auto hat einen freien Platz.</p>";e.moveOptions.querySelectorAll("[data-target]").forEach(b=>b.onclick=()=>{const n=dirKey("moves"),enc=encodeURIComponent(k),a=read(n).split(",").filter(Boolean).filter(x=>!x.startsWith(`${enc}:`));a.push(`${enc}:${Number(b.dataset.target)===-1?"l":b.dataset.target}`);write(n,a.join(","));e.move.close();renderPlan()});e.move.showModal()}
-    async function load(){const [c,p]=await Promise.all([api({action:"columns",event:s.event}),api({action:"participants",event:s.event,hinCol:s.mapping.hinfahrtColumn,rueckCol:s.mapping.rueckfahrtColumn})]);s.columns=c.columns||[];s.people=normalize(p.participants);renderHeader();renderSettings();renderPeople();renderPlan();e.liveDot.className="ok";e.liveText.textContent=`Campflow aktuell · ${s.people.length} Personen`}
-    function csv(){plans();return `${planToCsv(s.plans.Hinfahrt)}\n\n${planToCsv(s.plans.Rückfahrt)}`}
-    document.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{document.querySelectorAll("[data-tab]").forEach(x=>x.classList.toggle("active",x===b));document.querySelectorAll("[data-panel]").forEach(x=>x.classList.toggle("hidden",x.id!==b.dataset.tab))});document.querySelectorAll("[data-direction]").forEach(b=>b.onclick=()=>{s.direction=b.dataset.direction;renderPlan()});e.q.oninput=renderPeople;e.sync.onclick=load;e.event.onchange=async()=>{s.event=e.event.value;setParam("event",s.event);await load()};const colChange=async()=>{s.mapping.hinfahrtColumn=e.hin.value;s.mapping.rueckfahrtColumn=e.rueck.value;setParam("hinCol",e.hin.value);setParam("rueckCol",e.rueck.value);await load()};e.hin.onchange=colChange;e.rueck.onchange=colChange;e.copy.onclick=async()=>navigator.clipboard?.writeText(csv());e.download.onclick=()=>{const blob=new Blob(["\uFEFF"+csv()],{type:"text/csv;charset=utf-8"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`${(s.name||"fahrten").replace(/\W+/g,"_")}.csv`;a.click();URL.revokeObjectURL(a.href)};
-    (async()=>{try{const x=await api({action:"events"});s.events=x.events||[];const found=s.events.find(v=>v.id===param("event"))||s.events[0];if(!found)throw new Error("Keine Campflow-Events verfügbar");s.event=found.id;s.name=found.name;s.mapping.hinfahrtColumn=param("hinCol",DEF.hinfahrtColumn);s.mapping.rueckfahrtColumn=param("rueckCol",DEF.rueckfahrtColumn);await load()}catch(err){e.error.textContent=err instanceof Error?err.message:"Unbekannter Fehler";e.error.classList.remove("hidden");e.liveText.textContent="Campflow konnte nicht geladen werden"}})();
+    import {
+      applyManualMoves,
+      carLabel,
+      computePlan,
+      parseMovesFromUrl,
+      participantKey,
+      planToCsv,
+    } from "../lib/planner";
+
+    const DEF = {
+      hinfahrtColumn: "col_K0HMI9HMkVblaqpBqFBu",
+      rueckfahrtColumn: "col_tSMUO3gitt0dXFMOhWGq",
+    };
+    const PLANNER_STATE_PARAMS = [
+      "movesHin",
+      "movesRueck",
+      "disableHin",
+      "disableRueck",
+      "forceHin",
+      "forceRueck",
+    ];
+    const s = {
+      events: [],
+      people: [],
+      columns: [],
+      event: "",
+      name: "",
+      direction: "Hinfahrt",
+      mapping: { ...DEF },
+      plans: {},
+    };
+
+    const $ = (id) => document.getElementById(id);
+    const e = {
+      error: $("error"),
+      eventTitle: $("event-title"),
+      eventDate: $("event-date"),
+      liveDot: $("live-dot"),
+      liveText: $("live-text"),
+      summary: $("summary"),
+      cars: $("cars"),
+      unassigned: $("unassigned"),
+      unassignedCount: $("unassigned-count"),
+      unassignedWrap: $("unassigned-wrap"),
+      peopleCount: $("people-count"),
+      peopleBody: $("people-body"),
+      q: $("q"),
+      event: $("event"),
+      hin: $("hin-col"),
+      rueck: $("rueck-col"),
+      sync: $("sync"),
+      copy: $("copy"),
+      download: $("download"),
+      move: $("move"),
+      moveTitle: $("move-title"),
+      moveOptions: $("move-options"),
+    };
+
+    const esc = (value) => String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;");
+    const name = (person) => `${person.Vorname} ${person.Nachname}`.trim();
+    const key = (person) => participantKey(person);
+    const dirKey = (base, direction = s.direction) => `${base}${direction === "Hinfahrt" ? "Hin" : "Rueck"}`;
+    const url = () => new URL(location.href);
+    const param = (parameter, fallback = "") => url().searchParams.get(parameter) ?? fallback;
+
+    function setParam(parameter, value) {
+      const next = url();
+      if (value) next.searchParams.set(parameter, value);
+      else next.searchParams.delete(parameter);
+      history.replaceState({}, "", next);
+    }
+
+    const storeKey = (
+      eventId = s.event,
+      mapping = s.mapping,
+    ) => `carpool:${eventId || "default"}:${mapping.hinfahrtColumn}:${mapping.rueckfahrtColumn}`;
+
+    function clearPlannerState(...storageKeys) {
+      const next = url();
+      for (const parameter of PLANNER_STATE_PARAMS) next.searchParams.delete(parameter);
+      history.replaceState({}, "", next);
+
+      try {
+        for (const storageKey of new Set(storageKeys.filter(Boolean))) {
+          localStorage.removeItem(storageKey);
+        }
+      } catch {
+        // Storage can be unavailable in restricted browser contexts.
+      }
+    }
+
+    function read(parameter) {
+      const fromUrl = param(parameter);
+      if (fromUrl) return fromUrl;
+      try {
+        return JSON.parse(localStorage.getItem(storeKey()) || "{}")[parameter] || "";
+      } catch {
+        return "";
+      }
+    }
+
+    function write(parameter, value) {
+      setParam(parameter, value);
+      try {
+        const storage = JSON.parse(localStorage.getItem(storeKey()) || "{}");
+        storage[parameter] = value;
+        localStorage.setItem(storeKey(), JSON.stringify(storage));
+      } catch {
+        // URL state still works if localStorage is unavailable.
+      }
+    }
+
+    const keys = (value) => (value || "")
+      .split(",")
+      .filter(Boolean)
+      .map((entry) => {
+        try { return decodeURIComponent(entry); } catch { return ""; }
+      })
+      .filter(Boolean);
+    const keyList = (values) => [...new Set(values)].map(encodeURIComponent).join(",");
+
+    async function api(parameters) {
+      const response = await fetch(`/api/campflow?${new URLSearchParams(parameters)}`);
+      if (!response.ok) {
+        let message = `${response.status} ${response.statusText}`;
+        try { message = (await response.json()).error || message; } catch {}
+        throw new Error(message);
+      }
+      return response.json();
+    }
+
+    function normalize(people) {
+      return (people || [])
+        .filter((person) => name(person))
+        .map((person) => ({
+          ...person,
+          Vorname: (person.Vorname || "").trim(),
+          Nachname: (person.Nachname || "").trim(),
+          Gruppen: (person.Gruppen || "").trim(),
+          Hinfahrt: Math.max(0, Math.trunc(Number(person.Hinfahrt) || 0)),
+          Rückfahrt: Math.max(0, Math.trunc(Number(person.Rückfahrt) || 0)),
+        }));
+    }
+
+    function date(value) {
+      if (!value) return "";
+      const parsed = new Date(value);
+      return Number.isNaN(+parsed)
+        ? value
+        : new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "long", year: "numeric" }).format(parsed);
+    }
+
+    function group(person) {
+      const value = (person.Gruppen || "").toLowerCase();
+      if (value.includes("wöl")) return ["Wölflinge", "#ff6400"];
+      if (value.includes("jungpfad")) return ["Jupfis", "#2f53a7"];
+      if (value.includes("pfad")) return ["Pfadis", "#00823c"];
+      if (value.includes("rover")) return ["Rover", "#cc1f2f"];
+      if (value.includes("leit")) return ["Leitende", "#7b8578"];
+      return [person.Gruppen || "–", "#8b918f"];
+    }
+
+    function plans() {
+      for (const direction of ["Hinfahrt", "Rückfahrt"]) {
+        const base = computePlan(
+          s.people,
+          direction,
+          keys(read(dirKey("force", direction))),
+          [],
+          keys(read(dirKey("disable", direction))),
+        );
+        s.plans[direction] = applyManualMoves(
+          base,
+          parseMovesFromUrl(read(dirKey("moves", direction)), base),
+        );
+      }
+    }
+
+    function renderHeader() {
+      const selected = s.events.find((event) => event.id === s.event);
+      e.eventTitle.textContent = selected?.name || s.name;
+      e.eventDate.textContent = [date(selected?.startDate), date(selected?.endDate)]
+        .filter(Boolean)
+        .filter((value, index, values) => values.indexOf(value) === index)
+        .join(" – ");
+    }
+
+    function renderPlan() {
+      plans();
+      const plan = s.plans[s.direction];
+      document.querySelectorAll("[data-direction]").forEach((button) => {
+        button.classList.toggle("active", button.dataset.direction === s.direction);
+      });
+
+      const used = plan.cars.reduce((count, car) => count + car.passengers.length, 0);
+      const free = Math.max(0, plan.seatsAvailable - used);
+      e.summary.innerHTML = `
+        <span><b>${plan.cars.length}</b> Autos</span>
+        <span><b>${used}/${plan.seatsAvailable}</b> Kinderplätze</span>
+        <span><b>${free}</b> frei</span>
+        <span class="${plan.unassignedPassengers.length ? "warn" : "ok"}"><b>${plan.unassignedPassengers.length}</b> ohne Platz</span>`;
+
+      e.cars.innerHTML = plan.cars.map((car, index) => `
+        <li>
+          <span class="route-node">${index + 1}</span>
+          <article>
+            <header>
+              <div>
+                <small>${car.kind === "parent" ? "Elternauto" : "Leiterauto"}</small>
+                <h3>${esc(carLabel(car))}</h3>
+                <p>${car.kind === "parent" ? `${esc(name(car.anchor))} fährt fest mit.` : `${esc(name(car.anchor))} fährt selbst.`} ${car.passengers.length}/${car.childCapacity} Kinderplätze belegt.</p>
+              </div>
+              <button class="link-btn disable" data-key="${encodeURIComponent(key(car.anchor))}">Auto nicht nutzen</button>
+            </header>
+            <div class="capacity"><i style="width:${Math.min(100, car.passengers.length / car.childCapacity * 100)}%"></i></div>
+            <ul>${car.passengers.map((person) => {
+              const locked = car.kind === "parent" && key(person) === key(car.anchor);
+              const personGroup = group(person);
+              return `<li>${locked
+                ? `<span class="person locked"><i style="background:${personGroup[1]}"></i><b>${esc(name(person))}</b><small>eigenes Kind · fest</small></span>`
+                : `<button class="person move-person" data-key="${encodeURIComponent(key(person))}" data-from="${index}"><i style="background:${personGroup[1]}"></i><b>${esc(name(person))}</b><small>${esc(personGroup[0])}</small></button>`
+              }</li>`;
+            }).join("")}</ul>
+          </article>
+        </li>`).join("");
+
+      e.unassignedCount.textContent = plan.unassignedPassengers.length;
+      e.unassignedWrap.classList.toggle("empty", !plan.unassignedPassengers.length);
+      e.unassigned.innerHTML = plan.unassignedPassengers.length
+        ? plan.unassignedPassengers.map((person) => {
+          const personGroup = group(person);
+          return `<li><button class="person move-person" data-key="${encodeURIComponent(key(person))}" data-from="-1"><i style="background:${personGroup[1]}"></i><b>${esc(name(person))}</b><small>${esc(personGroup[0])}</small></button></li>`;
+        }).join("")
+        : `<li class="all-good">Alle haben einen Platz.</li>`;
+
+      bindPlanActions();
+    }
+
+    function renderPeople() {
+      const query = (e.q.value || "").toLowerCase();
+      const people = s.people.filter((person) => !query
+        || name(person).toLowerCase().includes(query)
+        || (person.Gruppen || "").toLowerCase().includes(query));
+      e.peopleCount.textContent = `${people.length} von ${s.people.length}`;
+      e.peopleBody.innerHTML = people.map((person) => {
+        const personGroup = group(person);
+        return `<tr><td><span class="table-name"><i style="background:${personGroup[1]}"></i>${esc(name(person))}</span></td><td>${esc(personGroup[0])}</td><td class="num ${person.Hinfahrt ? "cap" : ""}">${person.Hinfahrt || "–"}</td><td class="num ${person.Rückfahrt ? "cap" : ""}">${person.Rückfahrt || "–"}</td></tr>`;
+      }).join("");
+    }
+
+    function renderSettings() {
+      e.event.innerHTML = s.events.map((event) => `<option value="${esc(event.id)}" ${event.id === s.event ? "selected" : ""}>${esc(event.name)}</option>`).join("");
+      const columns = s.columns.length
+        ? s.columns
+        : [
+          { id: s.mapping.hinfahrtColumn, name: "Hinfahrt" },
+          { id: s.mapping.rueckfahrtColumn, name: "Rückfahrt" },
+        ];
+      const options = [...new Map(columns.map((column) => [column.id, column])).values()]
+        .map((column) => `<option value="${esc(column.id)}">${esc(column.name || column.id)}</option>`)
+        .join("");
+      e.hin.innerHTML = options;
+      e.rueck.innerHTML = options;
+      e.hin.value = s.mapping.hinfahrtColumn;
+      e.rueck.value = s.mapping.rueckfahrtColumn;
+    }
+
+    function bindPlanActions() {
+      document.querySelectorAll(".move-person").forEach((button) => {
+        button.onclick = () => openMove(decodeURIComponent(button.dataset.key), Number(button.dataset.from));
+      });
+      document.querySelectorAll(".disable").forEach((button) => {
+        button.onclick = () => {
+          const parameter = dirKey("disable");
+          write(parameter, keyList([...keys(read(parameter)), decodeURIComponent(button.dataset.key)]));
+          write(dirKey("moves"), "");
+          renderPlan();
+        };
+      });
+    }
+
+    function openMove(personKey, from) {
+      const plan = s.plans[s.direction];
+      const person = s.people.find((candidate) => key(candidate) === personKey);
+      e.moveTitle.textContent = name(person);
+      const options = [];
+
+      plan.cars.forEach((car, index) => {
+        if (index !== from && car.passengers.length < car.childCapacity) {
+          options.push(`<button type="button" data-target="${index}"><span><b>${esc(carLabel(car))}</b><small>${car.childCapacity - car.passengers.length} frei</small></span><em>Auswählen</em></button>`);
+        }
+      });
+      if (from !== -1) {
+        options.push(`<button type="button" data-target="-1"><span><b>Ohne Zuordnung</b><small>aus aktuellem Auto nehmen</small></span><em>Auswählen</em></button>`);
+      }
+
+      e.moveOptions.innerHTML = options.join("") || "<p>Kein anderes Auto hat einen freien Platz.</p>";
+      e.moveOptions.querySelectorAll("[data-target]").forEach((button) => {
+        button.onclick = () => {
+          const parameter = dirKey("moves");
+          const encoded = encodeURIComponent(personKey);
+          const moves = read(parameter)
+            .split(",")
+            .filter(Boolean)
+            .filter((move) => !move.startsWith(`${encoded}:`));
+          moves.push(`${encoded}:${Number(button.dataset.target) === -1 ? "l" : button.dataset.target}`);
+          write(parameter, moves.join(","));
+          e.move.close();
+          renderPlan();
+        };
+      });
+      e.move.showModal();
+    }
+
+    async function load() {
+      const [columnsResponse, peopleResponse] = await Promise.all([
+        api({ action: "columns", event: s.event }),
+        api({
+          action: "participants",
+          event: s.event,
+          hinCol: s.mapping.hinfahrtColumn,
+          rueckCol: s.mapping.rueckfahrtColumn,
+        }),
+      ]);
+      s.columns = columnsResponse.columns || [];
+      s.people = normalize(peopleResponse.participants);
+      renderHeader();
+      renderSettings();
+      renderPeople();
+      renderPlan();
+      e.liveDot.className = "ok";
+      e.liveText.textContent = `Campflow aktuell · ${s.people.length} Personen`;
+    }
+
+    function csv() {
+      plans();
+      return `${planToCsv(s.plans.Hinfahrt)}\n\n${planToCsv(s.plans.Rückfahrt)}`;
+    }
+
+    document.querySelectorAll("[data-tab]").forEach((button) => {
+      button.onclick = () => {
+        document.querySelectorAll("[data-tab]").forEach((tab) => tab.classList.toggle("active", tab === button));
+        document.querySelectorAll("[data-panel]").forEach((panel) => panel.classList.toggle("hidden", panel.id !== button.dataset.tab));
+      };
+    });
+    document.querySelectorAll("[data-direction]").forEach((button) => {
+      button.onclick = () => {
+        s.direction = button.dataset.direction;
+        renderPlan();
+      };
+    });
+
+    e.q.oninput = renderPeople;
+    e.sync.onclick = load;
+    e.event.onchange = async () => {
+      const previousStoreKey = storeKey();
+      s.event = e.event.value;
+      s.name = s.events.find((event) => event.id === s.event)?.name || "";
+      setParam("event", s.event);
+      clearPlannerState(previousStoreKey, storeKey());
+      await load();
+    };
+
+    const colChange = async () => {
+      const previousStoreKey = storeKey();
+      s.mapping.hinfahrtColumn = e.hin.value;
+      s.mapping.rueckfahrtColumn = e.rueck.value;
+      setParam("hinCol", e.hin.value);
+      setParam("rueckCol", e.rueck.value);
+      clearPlannerState(previousStoreKey, storeKey());
+      await load();
+    };
+    e.hin.onchange = colChange;
+    e.rueck.onchange = colChange;
+
+    e.copy.onclick = async () => navigator.clipboard?.writeText(csv());
+    e.download.onclick = () => {
+      const blob = new Blob(["\uFEFF" + csv()], { type: "text/csv;charset=utf-8" });
+      const anchor = document.createElement("a");
+      anchor.href = URL.createObjectURL(blob);
+      anchor.download = `${(s.name || "fahrten").replace(/\W+/g, "_")}.csv`;
+      anchor.click();
+      URL.revokeObjectURL(anchor.href);
+    };
+
+    (async () => {
+      try {
+        const response = await api({ action: "events" });
+        s.events = response.events || [];
+        const found = s.events.find((event) => event.id === param("event")) || s.events[0];
+        if (!found) throw new Error("Keine Campflow-Events verfügbar");
+        s.event = found.id;
+        s.name = found.name;
+        s.mapping.hinfahrtColumn = param("hinCol", DEF.hinfahrtColumn);
+        s.mapping.rueckfahrtColumn = param("rueckCol", DEF.rueckfahrtColumn);
+        await load();
+      } catch (error) {
+        e.error.textContent = error instanceof Error ? error.message : "Unbekannter Fehler";
+        e.error.classList.remove("hidden");
+        e.liveText.textContent = "Campflow konnte nicht geladen werden";
+      }
+    })();
   </script>
 </BaseLayout>
