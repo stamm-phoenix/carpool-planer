@@ -89,6 +89,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
         <label><span>Rückfahrt-Feld</span><select id="rueck-col"></select></label>
         <button id="sync" class="primary">Synchronisieren</button>
       </div>
+      <div id="disabled-cars" class="disabled-cars hidden"></div>
     </details>
   </main>
 
@@ -108,6 +109,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
       applyManualMoves,
       carLabel,
       computePlan,
+      isLeiter,
       parseMovesFromUrl,
       participantKey,
       planToCsv,
@@ -124,6 +126,8 @@ import BaseLayout from "../layouts/BaseLayout.astro";
       "disableRueck",
       "forceHin",
       "forceRueck",
+      "carOrderHin",
+      "carOrderRueck",
     ];
     const s = {
       events: [],
@@ -136,6 +140,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
       plans: {},
     };
 
+    let loadVersion = 0;
     const $ = (id) => document.getElementById(id);
     const e = {
       error: $("error"),
@@ -157,6 +162,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
       sync: $("sync"),
       copy: $("copy"),
       download: $("download"),
+      disabledCars: $("disabled-cars"),
       move: $("move"),
       moveTitle: $("move-title"),
       moveOptions: $("move-options"),
@@ -167,7 +173,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
       .replaceAll("<", "&lt;")
       .replaceAll(">", "&gt;")
       .replaceAll('"', "&quot;");
-    const name = (person) => `${person.Vorname} ${person.Nachname}`.trim();
+    const name = (person) => `${person?.Vorname || ""} ${person?.Nachname || ""}`.trim();
     const key = (person) => participantKey(person);
     const dirKey = (base, direction = s.direction) => `${base}${direction === "Hinfahrt" ? "Hin" : "Rueck"}`;
     const url = () => new URL(location.href);
@@ -228,6 +234,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
       })
       .filter(Boolean);
     const keyList = (values) => [...new Set(values)].map(encodeURIComponent).join(",");
+    const carOrder = (plan) => plan.cars.map((car) => encodeURIComponent(key(car.anchor))).join(",");
 
     async function api(parameters) {
       const response = await fetch(`/api/campflow?${new URLSearchParams(parameters)}`);
@@ -279,9 +286,20 @@ import BaseLayout from "../layouts/BaseLayout.astro";
           [],
           keys(read(dirKey("disable", direction))),
         );
+        const movesParameter = dirKey("moves", direction);
+        const orderParameter = dirKey("carOrder", direction);
+        let savedMoves = read(movesParameter);
+        const currentOrder = carOrder(base);
+
+        if (savedMoves && read(orderParameter) !== currentOrder) {
+          write(movesParameter, "");
+          write(orderParameter, "");
+          savedMoves = "";
+        }
+
         s.plans[direction] = applyManualMoves(
           base,
-          parseMovesFromUrl(read(dirKey("moves", direction)), base),
+          parseMovesFromUrl(savedMoves, base),
         );
       }
     }
@@ -293,6 +311,39 @@ import BaseLayout from "../layouts/BaseLayout.astro";
         .filter(Boolean)
         .filter((value, index, values) => values.indexOf(value) === index)
         .join(" – ");
+    }
+
+    function renderDisabledCars() {
+      const rows = [];
+      for (const direction of ["Hinfahrt", "Rückfahrt"]) {
+        for (const disabledKey of keys(read(dirKey("disable", direction)))) {
+          const person = s.people.find((candidate) => key(candidate) === disabledKey);
+          if (!person) continue;
+          const label = isLeiter(person) ? name(person) : `Eltern von ${name(person)}`;
+          rows.push(`
+            <button type="button" data-enable-direction="${direction}" data-enable-key="${encodeURIComponent(disabledKey)}">
+              <span><b>${esc(label)}</b><small>${direction} · deaktiviert</small></span>
+              <em>Wieder nutzen</em>
+            </button>`);
+        }
+      }
+
+      e.disabledCars.classList.toggle("hidden", rows.length === 0);
+      e.disabledCars.innerHTML = rows.length
+        ? `<h3>Deaktivierte Autos</h3><p>Hier kannst du ein zuvor ausgeschaltetes Auto wieder in die Planung aufnehmen.</p><div>${rows.join("")}</div>`
+        : "";
+
+      e.disabledCars.querySelectorAll("[data-enable-key]").forEach((button) => {
+        button.onclick = () => {
+          const direction = button.dataset.enableDirection;
+          const disabledKey = decodeURIComponent(button.dataset.enableKey);
+          const disableParameter = dirKey("disable", direction);
+          write(disableParameter, keyList(keys(read(disableParameter)).filter((item) => item !== disabledKey)));
+          write(dirKey("moves", direction), "");
+          write(dirKey("carOrder", direction), "");
+          renderPlan();
+        };
+      });
     }
 
     function renderPlan() {
@@ -344,6 +395,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
         : `<li class="all-good">Alle haben einen Platz.</li>`;
 
       bindPlanActions();
+      renderDisabledCars();
     }
 
     function renderPeople() {
@@ -384,6 +436,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
           const parameter = dirKey("disable");
           write(parameter, keyList([...keys(read(parameter)), decodeURIComponent(button.dataset.key)]));
           write(dirKey("moves"), "");
+          write(dirKey("carOrder"), "");
           renderPlan();
         };
       });
@@ -392,6 +445,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
     function openMove(personKey, from) {
       const plan = s.plans[s.direction];
       const person = s.people.find((candidate) => key(candidate) === personKey);
+      if (!person) return;
       e.moveTitle.textContent = name(person);
       const options = [];
 
@@ -407,14 +461,15 @@ import BaseLayout from "../layouts/BaseLayout.astro";
       e.moveOptions.innerHTML = options.join("") || "<p>Kein anderes Auto hat einen freien Platz.</p>";
       e.moveOptions.querySelectorAll("[data-target]").forEach((button) => {
         button.onclick = () => {
-          const parameter = dirKey("moves");
+          const movesParameter = dirKey("moves");
           const encoded = encodeURIComponent(personKey);
-          const moves = read(parameter)
+          const moves = read(movesParameter)
             .split(",")
             .filter(Boolean)
             .filter((move) => !move.startsWith(`${encoded}:`));
           moves.push(`${encoded}:${Number(button.dataset.target) === -1 ? "l" : button.dataset.target}`);
-          write(parameter, moves.join(","));
+          write(movesParameter, moves.join(","));
+          write(dirKey("carOrder"), carOrder(plan));
           e.move.close();
           renderPlan();
         };
@@ -423,23 +478,40 @@ import BaseLayout from "../layouts/BaseLayout.astro";
     }
 
     async function load() {
-      const [columnsResponse, peopleResponse] = await Promise.all([
-        api({ action: "columns", event: s.event }),
-        api({
-          action: "participants",
-          event: s.event,
-          hinCol: s.mapping.hinfahrtColumn,
-          rueckCol: s.mapping.rueckfahrtColumn,
-        }),
-      ]);
-      s.columns = columnsResponse.columns || [];
-      s.people = normalize(peopleResponse.participants);
-      renderHeader();
-      renderSettings();
-      renderPeople();
-      renderPlan();
-      e.liveDot.className = "ok";
-      e.liveText.textContent = `Campflow aktuell · ${s.people.length} Personen`;
+      const version = ++loadVersion;
+      e.liveDot.className = "";
+      e.liveText.textContent = "Campflow wird aktualisiert";
+
+      try {
+        const [columnsResponse, peopleResponse] = await Promise.all([
+          api({ action: "columns", event: s.event }),
+          api({
+            action: "participants",
+            event: s.event,
+            hinCol: s.mapping.hinfahrtColumn,
+            rueckCol: s.mapping.rueckfahrtColumn,
+          }),
+        ]);
+
+        if (version !== loadVersion) return false;
+        s.columns = columnsResponse.columns || [];
+        s.people = normalize(peopleResponse.participants);
+        renderHeader();
+        renderSettings();
+        renderPeople();
+        renderPlan();
+        e.error.classList.add("hidden");
+        e.liveDot.className = "ok";
+        e.liveText.textContent = `Campflow aktuell · ${s.people.length} Personen`;
+        return true;
+      } catch (error) {
+        if (version !== loadVersion) return false;
+        e.error.textContent = error instanceof Error ? error.message : "Unbekannter Fehler";
+        e.error.classList.remove("hidden");
+        e.liveDot.className = "";
+        e.liveText.textContent = "Campflow konnte nicht geladen werden";
+        return false;
+      }
     }
 
     function csv() {
