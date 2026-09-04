@@ -16,6 +16,7 @@ const GROUP_PATTERNS = {
   woelflinge: ["wölflinge", "wölfling", "woelfling"],
 } as const;
 
+/** Returns the planner priority tier for a Campflow group name. */
 function getPriorityTier(group: string): number {
   const value = group?.toLowerCase() ?? "";
   if (GROUP_PATTERNS.leiter.some((pattern) => value.includes(pattern))) return 0;
@@ -26,6 +27,7 @@ function getPriorityTier(group: string): number {
   return 3;
 }
 
+/** Normalizes a raw Campflow group name to the label used by the planner UI. */
 export function getGroupCategory(group: string): string {
   const value = group?.toLowerCase() ?? "";
   if (GROUP_PATTERNS.leiter.some((pattern) => value.includes(pattern))) return "Leitende";
@@ -36,10 +38,12 @@ export function getGroupCategory(group: string): string {
   return group || "Unbekannt";
 }
 
+/** Returns whether a participant belongs to a leader-like group. */
 export function isLeiter(participant: Participant): boolean {
   return getPriorityTier(participant.Gruppen) === 0;
 }
 
+/** Returns the stable participant identifier used in URLs and manual planner state. */
 export function participantKey(participant: Participant): string {
   if (participant.id) return participant.id;
   return `${participant.Vorname}|${participant.Nachname}|${participant.Gruppen}`;
@@ -76,20 +80,24 @@ type CarCandidate = {
   kind: CarKind;
 };
 
+/** Formats a participant's display name without inventing parent information. */
 function fullName(participant: Participant): string {
   return `${participant.Vorname} ${participant.Nachname}`.trim();
 }
 
+/** Returns the public label for a parent car or leader-driven car. */
 export function carLabel(car: CarAssignment): string {
   return car.kind === "leader"
     ? fullName(car.anchor)
     : `Eltern von ${fullName(car.anchor)}`;
 }
 
+/** Returns a normalized surname for family-affinity scoring. */
 function getSurname(participant: Participant): string {
   return (participant.Nachname ?? "").trim().toLowerCase();
 }
 
+/** Counts how often each surname occurs in a passenger pool. */
 function surnameCounts(passengers: Participant[]): Map<string, number> {
   const counts = new Map<string, number>();
   for (const passenger of passengers) {
@@ -100,6 +108,7 @@ function surnameCounts(passengers: Participant[]): Map<string, number> {
   return counts;
 }
 
+/** Selects and removes the best matching passenger for a car from the remaining pool. */
 function pickBestPassenger(
   anchor: Participant,
   remaining: Participant[],
@@ -142,6 +151,7 @@ function pickBestPassenger(
   return remaining.splice(bestIndex, 1)[0];
 }
 
+/** Orders car candidates by capacity first, then group priority and name. */
 function sortCandidates(a: CarCandidate, b: CarCandidate): number {
   if (b.childCapacity !== a.childCapacity) return b.childCapacity - a.childCapacity;
   const tierDiff = getPriorityTier(a.participant.Gruppen) - getPriorityTier(b.participant.Gruppen);
@@ -149,10 +159,12 @@ function sortCandidates(a: CarCandidate, b: CarCandidate): number {
   return fullName(a.participant).localeCompare(fullName(b.participant), "de");
 }
 
+/** Returns whether a passenger is the child that must remain in its parent car. */
 function isLockedPassenger(car: CarAssignment, participant: Participant): boolean {
   return car.kind === "parent" && participantKey(car.anchor) === participantKey(participant);
 }
 
+/** Fills cars up to their child capacity and returns participants that still have no place. */
 function fillCars(cars: CarAssignment[], pool: Participant[]): Participant[] {
   for (const car of cars) {
     while (car.passengers.length < car.childCapacity && pool.length > 0) {
@@ -247,6 +259,7 @@ export interface ManualMove {
   toCarIndex: number;
 }
 
+/** Rebuilds a plan after manual edits while preserving locked children and capacity limits. */
 function rebalanceCars(
   cars: CarAssignment[],
   unassignedPassengers: Participant[],
@@ -302,6 +315,7 @@ function rebalanceCars(
   return { cars: cleanedCars, unassignedPassengers: pool };
 }
 
+/** Applies persisted manual passenger moves and then rebalances invalid or duplicate assignments. */
 export function applyManualMoves(plan: PlanResult, moves: ManualMove[]): PlanResult {
   const cars = plan.cars.map((car) => ({ ...car, passengers: [...car.passengers] }));
   let unassignedPassengers = [...plan.unassignedPassengers];
@@ -342,6 +356,7 @@ export function applyManualMoves(plan: PlanResult, moves: ManualMove[]): PlanRes
   };
 }
 
+/** Parses the compact URL move representation against the current base plan locations. */
 export function parseMovesFromUrl(movesStr: string, plan: PlanResult): ManualMove[] {
   if (!movesStr) return [];
 
@@ -375,12 +390,14 @@ export function parseMovesFromUrl(movesStr: string, plan: PlanResult): ManualMov
   return moves;
 }
 
+/** Serializes manual moves into the compact URL/localStorage representation. */
 export function serializeMovesToUrl(moves: ManualMove[]): string {
   return moves
     .map((move) => `${encodeURIComponent(move.participantKey)}:${move.toCarIndex === -1 ? "l" : move.toCarIndex}`)
     .join(",");
 }
 
+/** Escapes one scalar value for comma-separated CSV output. */
 function csvEscape(value: string | number): string {
   const text = String(value ?? "");
   if (text.includes('"') || text.includes(",") || text.includes("\n")) {
@@ -389,6 +406,7 @@ function csvEscape(value: string | number): string {
   return text;
 }
 
+/** Exports one direction of the plan without representing a child as an unnamed parent driver. */
 export function planToCsv(plan: PlanResult): string {
   const header = "Richtung,Status,Name,Gruppe,Auto,Kapazität Kinder";
   const rows: string[] = [];
