@@ -1,30 +1,37 @@
 # carpool-planer
-Automated carpool coordination using the Campflow API. Fetches event dates to streamline transport planning for group trips.
 
-## Development (Nix flake)
-- Enter devshell: `nix develop` (direnv: `.envrc` with `use flake`).
-- Formatter: `nix fmt` (alejandra).
-- Lint/tests via flake checks: `nix flake check` (runs `pnpm run lint` / `pnpm test` if scripts exist).
-- Build: `nix build` (prefers `pnpm-lock.yaml`, falls back to `bun.lockb`).
-- Env: copy `.env.example` to `.env` and set `CAMPFLOW_TOKEN` for Campflow API access (do not commit `.env`).
+Fahrgemeinschaftsplanung für den DPSG Stamm Phoenix auf Basis der Campflow API.
+
+## Fachliches Modell
+
+- Campflow liefert pro angemeldeter Person eine Kapazität für Hin- und Rückfahrt.
+- Bei Kindern bedeutet ein Wert größer `0`: Ein Elternteil bietet für diese Richtung ein Auto an.
+- Die Zahl ist die Anzahl der **Kinder**, die das Elternteil mitnehmen kann. Der erwachsene Fahrer wird nicht abgezogen.
+- Der Name des Elternteils wird nicht benötigt und nicht angezeigt. Ein Auto wird als `Eltern von <Kind>` bezeichnet.
+- Wird ein Elternauto verwendet, bleibt das zugehörige Kind immer fest in diesem Auto.
+- Leitende mit eingetragener Kapazität können selbst als Fahrer eingeplant werden.
+- Der Algorithmus versucht mit möglichst wenigen Autos auszukommen und bevorzugt größere Kapazitäten; Familien- und Gruppenzusammenhänge fließen in die Verteilung ein.
 
 ## Development (npm)
-- Install deps: `npm install`
+
+- Install: `npm install`
 - Dev server: `npm run dev`
-- Lint: `npm run lint` (astro check)
+- Lint/typecheck: `npm run lint` (`astro check`)
 - Build: `npm run build`
+- Tests: `npm run test` (aktuell noch Stub)
+
+Node >=20 wird benötigt.
 
 ## Azure Static Web Apps
-- Deployment target is static output (`dist/`).
-- `staticwebapp.config.json` is included for SPA-style fallback and headers.
-- `api/` contains an Azure Functions endpoint (`/api/campflow`) for runtime Campflow access.
-- Set `CAMPFLOW_TOKEN` in Azure Static Web Apps application settings (Functions runtime), not in client env.
-- The frontend can call `/api/campflow` without exposing the token.
 
-## Current scope
-- Astro + Tailwind 4 UI mit DPSG-Farben; Event-Dropdown, Teilnehmerliste, Planner für Hin/Rück getrennt.
-- Prod/Dev: In Prod Campflow (Token `CAMPFLOW_TOKEN`), sonst CSV-Fallback. Modus wird im UI angezeigt.
-- Auto-Fahrerzuweisung mit Leiter-Priorität; Plätze aus Teilnehmerangaben, Leftover-Hinweis.
-- Export: CSV-Download und Copy-to-Clipboard (PDF später).
-- CSV-Sample `Winter-Wochenende_2026.csv` bleibt lokal und wird nicht committed.
-- Zukunft: Campflow-Endpoints finalisieren/anpassen, manuelle/Drag&Drop-Zuweisung und PDF.
+- Astro erzeugt statischen Output in `dist/`.
+- `staticwebapp.config.json` schützt die App mit Microsoft Entra ID.
+- `api/campflow` ist eine Azure Function und spricht Campflow serverseitig an.
+- `CAMPFLOW_TOKEN` wird ausschließlich als Azure Static Web Apps Application Setting gesetzt und niemals an den Browser ausgeliefert.
+- Frontend-Aufrufe laufen über `/api/campflow`.
+
+## Oberfläche
+
+Die App trennt Planung und Teilnehmendenliste, ohne ein verschachteltes Karten-Dashboard zu verwenden. Der Fahrplan wird als Route dargestellt; ein Auto ist eine Zeile auf dieser Route. Gruppen werden über die DPSG-Stufenfarben codiert, Status und Zusammenhänge primär über Typografie, Abstand und Trennlinien.
+
+Manuelle Anpassungen werden eventbezogen in URL/LocalStorage gespeichert. Das eigene Kind eines ausgewählten Elternautos kann dabei nicht aus diesem Auto verschoben werden.

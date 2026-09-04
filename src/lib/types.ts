@@ -3,20 +3,21 @@ export interface Participant {
   Vorname: string;
   Nachname: string;
   Gruppen: string;
+  /** Number of children the parent/driver can transport on the outbound trip. */
   Hinfahrt: number;
+  /** Number of children the parent/driver can transport on the return trip. */
   Rückfahrt: number;
 }
 
 export interface CampflowEvent {
-  id: string;        // The list_id from Campflow API
-  name: string;      // Event title
+  id: string;
+  name: string;
   startDate?: string;
   endDate?: string;
   published?: boolean;
   url?: string;
 }
 
-// Raw API response types for Campflow
 export interface CampflowApiEvent {
   list_id: string;
   title: string;
@@ -34,14 +35,12 @@ export interface CampflowApiPerson {
     last_name: string;
   };
   group_names: string[];
-  // Custom fields for carpool
-  col_K0HMI9HMkVblaqpBqFBu: number | null; // Hinfahrt (outbound seats)
-  col_tSMUO3gitt0dXFMOhWGq: number | null; // Rückfahrt (return seats)
-  // Other standard fields we might use
+  col_K0HMI9HMkVblaqpBqFBu: number | null;
+  col_tSMUO3gitt0dXFMOhWGq: number | null;
   birthdate?: string | null;
   primary_email?: string | null;
   cancellation_date?: string | null;
-  [key: string]: unknown; // Allow other fields
+  [key: string]: unknown;
 }
 
 export interface CampflowApiResponse<T> {
@@ -54,26 +53,17 @@ export interface CampflowApiResponse<T> {
   };
 }
 
-/**
- * Represents a custom column from Campflow that can be used for seat counts
- */
 export interface CampflowColumn {
-  id: string;        // e.g. "col_K0HMI9HMkVblaqpBqFBu"
-  name: string;      // Display name from Campflow
-  type?: string;     // Field type (number, text, etc.)
+  id: string;
+  name: string;
+  type?: string;
 }
 
-/**
- * User-selected mapping of which columns to use for Hinfahrt/Rückfahrt
- */
 export interface ColumnMapping {
-  hinfahrtColumn: string;   // Column ID for outbound trip seats
-  rueckfahrtColumn: string; // Column ID for return trip seats
+  hinfahrtColumn: string;
+  rueckfahrtColumn: string;
 }
 
-/**
- * Extended event type that includes available columns
- */
 export interface CampflowEventWithColumns extends CampflowEvent {
   columns: CampflowColumn[];
 }

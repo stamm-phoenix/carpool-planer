@@ -4,24 +4,23 @@ import "../styles/global.css";
 interface Props {
   title?: string;
 }
-const { title = "Carpool Planner" } = Astro.props;
+
+const { title = "Fahrtenplanung" } = Astro.props;
 ---
+<!doctype html>
 <html lang="de">
   <head>
     <meta charset="utf-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="generator" content={Astro.generator} />
-    <title>{title} | DPSG</title>
-    <!-- Google Fonts: Arvo for headlines -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Arvo:wght@400;700&display=swap" rel="stylesheet">
+    <meta name="theme-color" content="#003056" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Arvo:wght@400;700&family=Source+Sans+3:wght@400;600;700;800&display=swap" rel="stylesheet" />
+    <title>{title} | Stamm Phoenix</title>
   </head>
-  <body class="min-h-screen font-sans">
-    <!-- Main content -->
-    <main class="mx-auto max-w-6xl px-4 py-8 md:px-6 lg:px-8">
-      <slot />
-    </main>
+  <body>
+    <slot />
   </body>
 </html>
