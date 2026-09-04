@@ -3,90 +3,51 @@
 Repository guide for agentic coding tasks. Scope: entire repo.
 
 ## Quick commands
-- Install (npm): `npm install`
-- Install (pnpm): `pnpm install`
+- Install: `npm install`
 - Dev server: `npm run dev`
 - Build: `npm run build`
-- Lint/typecheck: `npm run lint` (astro check)
-- Tests: `npm run test` (currently stub, exits 0)
-- Single test: not available (no real test suite yet)
-- Format Nix: `nix fmt`
-- Flake checks: `nix flake check` (runs lint/test if scripts exist)
-- Nix build: `nix build`
+- Lint/typecheck: `npm run lint` (`astro check`)
+- Tests: `npm run test` (currently a stub)
 
-## Environments
-- Default package manager in repo: npm (package-lock.json). pnpm/bun supported via flake.
-- Node: >=20 (Node 22 available via flake).
-- Devshell: `nix develop` (direnv with `.envrc` -> `use flake`).
-- CAMPFLOW_TOKEN: required in production mode for API fetch; do not commit.
-- CSV sample `Winter-Wochenende_2026.csv` stays local/untracked; do not add to git.
-- Prod/Dev behavior: Dev uses CSV; Prod fetches Campflow events/participants with token, else falls back to CSV.
+## Environment
+- Node >=20.
+- `CAMPFLOW_TOKEN` is required for the production Campflow proxy and must never be committed or logged.
+- Azure Static Web Apps authentication remains Microsoft Entra ID via `staticwebapp.config.json`.
 
-## Project structure (key)
-- `src/pages/index.astro`: main page, event selection, planner UI.
-- `src/layouts/BaseLayout.astro`: layout, fonts, imports global.css.
-- `src/styles/global.css`: Tailwind import + DPSG palette/background.
-- `src/lib/types.ts`: shared types (Participant, CampflowEvent).
-- `src/lib/csvLoader.ts`: CSV parsing for sample data.
-- `src/lib/campflow.ts`: Campflow API client (placeholder endpoints).
-- `src/lib/planner.ts`: auto car assignment, priority, CSV export formatter.
-- `flake.nix`: devshells, build, checks. `flake.lock` pinned.
-- `.envrc`: local (ignored) with `use flake` (do not commit generated variants).
+## Project structure
+- `src/pages/index.astro`: planning UI, participant view and Campflow controls.
+- `src/layouts/BaseLayout.astro`: document shell and fonts.
+- `src/styles/global.css`: DPSG palette and app layout.
+- `src/lib/types.ts`: shared Campflow/planner types.
+- `src/lib/planner.ts`: car selection, locked-child rule, manual moves and CSV export.
+- `api/campflow/`: Azure Function proxy to Campflow.
 
-## Build/lint/test details
-- Lint: `npm run lint` → `astro check` (installs @astrojs/check + typescript). No additional ESLint configured.
-- Tests: `npm run test` is a stub. No test runner; single-test execution unsupported.
-- Build: `npm run build` → Astro static build.
-- Nix checks: `nix flake check` triggers lint/test if scripts exist and pnpm-lock present; with npm it may skip (uses pnpm install in derivation). Prefer running npm scripts directly in working tree.
-- Flake package build: uses `pnpm-lock.yaml` first, then `bun.lockb`; fails if none.
+## Planner semantics
+- `Hinfahrt` and `Rückfahrt` are child capacities, not seats including the adult driver.
+- A non-leader participant with capacity > 0 identifies a parent car. Never invent or display the parent's name.
+- Display parent cars as `Eltern von <Kind>` or equivalent wording that names only the child.
+- If a parent car is selected, that child is a locked passenger and must never be manually moved out of the car.
+- Leaders with capacity > 0 may be actual drivers; they do not consume one of the configured child places.
+- Prefer as few cars as possible, with larger capacities first. Family/group affinity is a secondary assignment heuristic.
+- Disabling a car removes only that car offer; its anchor participant remains part of transport demand.
+- Clear manual move state when the selected car set changes.
 
-## Styling & formatting
-- Tailwind via `@tailwindcss/vite`; global styles in `src/styles/global.css` with DPSG colors and gradients.
-- Typography: BaseLayout sets system/Inter fallback via inline @font-face; keep body font-family consistent.
-- Astro components: keep script frontmatter minimal; prefer server-side data fetch in frontmatter, render via JSX-like template.
-- Imports order: standard libs first, then local modules; keep type imports explicit (`import type`); group blank line between groups.
-- Types: use explicit types for props and data; avoid `any`; use interfaces in `src/lib/types.ts` when reusable.
-- Naming: PascalCase for components, camelCase for functions/vars, SCREAMING_SNAKE for env names. Participant fields follow CSV keys (Vorname, Nachname, Gruppen, Hinfahrt, Rückfahrt).
-- Error handling: Surface user-friendly fallback; Campflow fetches should catch and fallback to CSV. Do not throw unhandled errors in page frontmatter.
-- Planner logic: respects `groupPriorityOrder` (Leiter zuerst), sorts by group priority then seats desc; seats include driver; passenger capacity = seats-1.
-- Exports: `planToCsv` used for download/copy; keep CSV header `Richtung,Fahrer,Plätze,Mitfahrende`.
+## UI/UX
+- Keep UI text in German.
+- Avoid generic card grids and card-in-card layouts. Prefer spacing, typography, alignment and dividers for grouping.
+- Use a raised/elevated surface only for a real interaction layer such as a dialog.
+- Use DPSG stage colors only when they encode a real group.
+- Keep visible form labels, keyboard focus, mobile layouts and `prefers-reduced-motion` support.
 
-## UI/UX guidance
-- Preserve DPSG palette variables from `global.css` and dark background.
-- Keep accessibility: label inputs, use semantic headings; ensure contrast on buttons.
-- Event dropdown: future Campflow data; keep demo sample as fallback.
-- Buttons: CSV Export triggers Blob download; Copy uses clipboard API (best-effort).
-- PDF export is stub; don’t implement unless requested.
-
-## Data sources & env
-- Campflow endpoints currently placeholder: `${CAMPFLOW_BASE}/v1/events` and `/v1/events/{id}/participants`. Confirm and adjust when specs arrive.
-- Token passes as `Authorization: Bearer <token>`; do not log token.
-- CSV sample parsing assumes header: Vorname,Nachname,Gruppen,Hinfahrt,Rückfahrt with quotes.
+## Campflow/API
+- Frontend calls `/api/campflow`; the token stays server-side.
+- Events: `/events`.
+- Participants: `/lists/{listId}/persons` with cursor pagination.
+- Columns: `/lists/{listId}/columns`, with numeric-field inference fallback.
+- Normalize custom column values to non-negative integers.
 
 ## Git/hygiene
-- Do NOT commit `Winter-Wochenende_2026.csv` or `.envrc` variants.
-- Keep `flake.lock` in sync when changing `flake.nix`.
-- Avoid generating `.astro/` cache in commits; remove before commit.
-- Respect existing scripts and package manager choice; if switching to pnpm, add lock and update instructions.
-
-## Adding tests (future)
-- If tests are added, document single-test invocation in this file and scripts; prefer npm test -- <pattern> or vitest --run <pattern> if introduced.
-- Until then, mark test-related changes as stub-only and avoid fake pass conditions in CI.
-
-## Adding lint/format (future)
-- If ESLint/Prettier added, update commands here; keep Astro check as part of lint.
-- Nix formatting handled by `nix fmt` (alejandra); do not add other Nix formatters.
-
-## Deployment/CI hints
-- Github Actions/CI not yet defined; Nix outputs ready for CI (`devShells.ci`, `checks`).
-- Production mode requires `CAMPFLOW_TOKEN`; ensure secrets configured when wiring CI/CD.
-
-## Cursor / Copilot rules
-- None present (.cursor/ or .github/copilot-instructions.md not found). If added, mirror here in future updates.
-
-## Conventions recap
-- Prefer npm scripts for dev; flake for reproducibility.
-- Keep prod/dev mode toggle intact; prod fetch with token, otherwise CSV fallback.
-- Maintain group priority order from `planner.ts`.
-- Keep UI texts in German as currently present.
-- Document new commands in this file when added.
+- Do not commit `.env`, tokens, local `.envrc` variants or `Winter-Wochenende_2026.csv`.
+- Avoid committing generated `.astro/` cache.
+- Prefer npm scripts for checks in the working tree.
+- The current test script is a stub; do not claim real automated test coverage.
